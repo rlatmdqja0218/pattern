@@ -17,7 +17,9 @@ function MockupPlaceholder({ imageUrl }) {
       return;
     }
     let disposed = false;
-    new THREE.TextureLoader().load(imageUrl, (loaded) => {
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('Anonymous');
+    loader.load(imageUrl, (loaded) => {
       if (disposed) return;
       loaded.colorSpace = THREE.SRGBColorSpace;
       setTexture(loaded);

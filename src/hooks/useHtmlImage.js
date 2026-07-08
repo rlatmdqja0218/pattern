@@ -14,7 +14,7 @@ export function useHtmlImage(url) {
     }
     const el = new window.Image();
     // 외부 이미지 사용 시 캔버스 오염(tainted canvas) 방지
-    el.crossOrigin = 'anonymous';
+    el.crossOrigin = 'Anonymous';
     el.onload = () => setImage(el);
     el.src = url;
     return () => {

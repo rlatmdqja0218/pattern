@@ -82,6 +82,11 @@
   display: block;
 }
 
+.preview-panel__canvas {
+  position: absolute;
+  inset: 0;
+}
+
 .preview-panel__placeholder {
   position: absolute;
   inset: 0;
@@ -92,4 +97,23 @@
   font-size: 13px;
   color: #6f7681;
   pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(560px, 1fr);
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .app__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #2a2f36;
+  }
+
+  .app__previews {
+    min-height: 560px;
+  }
 }
