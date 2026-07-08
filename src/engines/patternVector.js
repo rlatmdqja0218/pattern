@@ -44,17 +44,35 @@ function getPathBounds(segments) {
   };
 }
 
-function traceEditablePath(ctx, editablePath, bounds) {
+function scaleAround(point, center, scale) {
+  return {
+    x: center.x + (point.x - center.x) * scale,
+    y: center.y + (point.y - center.y) * scale,
+  };
+}
+
+function getScaledAbsoluteSegment(segment, pathBounds, pathScale) {
+  const absolute = getAbsoluteSegment(segment);
+  const center = { x: pathBounds.centerX, y: pathBounds.centerY };
+
+  return {
+    point: scaleAround(absolute.point, center, pathScale),
+    handleIn: scaleAround(absolute.handleIn, center, pathScale),
+    handleOut: scaleAround(absolute.handleOut, center, pathScale),
+  };
+}
+
+function traceEditablePath(ctx, editablePath, bounds, pathBounds = bounds, pathScale = 1) {
   const { segments, closed } = editablePath;
   if (!segments?.length) return;
 
-  const first = getAbsoluteSegment(segments[0]);
+  const first = getScaledAbsoluteSegment(segments[0], pathBounds, pathScale);
   ctx.beginPath();
   ctx.moveTo(first.point.x - bounds.centerX, first.point.y - bounds.centerY);
 
   for (let index = 1; index < segments.length; index += 1) {
-    const previous = getAbsoluteSegment(segments[index - 1]);
-    const current = getAbsoluteSegment(segments[index]);
+    const previous = getScaledAbsoluteSegment(segments[index - 1], pathBounds, pathScale);
+    const current = getScaledAbsoluteSegment(segments[index], pathBounds, pathScale);
     ctx.bezierCurveTo(
       previous.handleOut.x - bounds.centerX,
       previous.handleOut.y - bounds.centerY,
@@ -66,7 +84,7 @@ function traceEditablePath(ctx, editablePath, bounds) {
   }
 
   if (closed) {
-    const previous = getAbsoluteSegment(segments.at(-1));
+    const previous = getScaledAbsoluteSegment(segments.at(-1), pathBounds, pathScale);
     ctx.bezierCurveTo(
       previous.handleOut.x - bounds.centerX,
       previous.handleOut.y - bounds.centerY,
@@ -84,22 +102,25 @@ function hasRenderablePath(editablePath) {
 }
 
 function getMotifEntries(editablePath, selectedMotifs = []) {
-  const selectedPaths = Array.isArray(selectedMotifs)
+  const selectedEntries = Array.isArray(selectedMotifs)
     ? selectedMotifs
-      .map((motif) => motif.editablePath)
-      .filter(hasRenderablePath)
+      .filter((motif) => motif.role !== 'ignore' && hasRenderablePath(motif.editablePath))
+      .map((motif, index) => ({
+        path: motif.editablePath,
+        role: normalizeRole(motif.role),
+        bounds: getPathBounds(motif.editablePath.segments),
+        index,
+      }))
     : [];
-  const paths = selectedPaths.length
-    ? selectedPaths
-    : hasRenderablePath(editablePath)
-      ? [editablePath]
-      : [];
+  if (selectedEntries.length) return selectedEntries;
+  if (!hasRenderablePath(editablePath)) return [];
 
-  return paths.map((path, index) => ({
-    path,
-    bounds: getPathBounds(path.segments),
-    index,
-  }));
+  return [{
+    path: editablePath,
+    role: 'primary',
+    bounds: getPathBounds(editablePath.segments),
+    index: 0,
+  }];
 }
 
 function getCombinedBounds(motifEntries) {
@@ -122,7 +143,154 @@ function getCombinedBounds(motifEntries) {
 
 function hasSelectedMotifPaths(selectedMotifs) {
   return Array.isArray(selectedMotifs)
-    && selectedMotifs.some((motif) => hasRenderablePath(motif.editablePath));
+    && selectedMotifs.some((motif) => motif.role !== 'ignore' && hasRenderablePath(motif.editablePath));
+}
+
+function normalizeRole(role) {
+  return ['primary', 'secondary', 'accent'].includes(role) ? role : 'accent';
+}
+
+function hexToRgb(hexColor) {
+  const normalized = String(hexColor || '#000000').replace('#', '').trim();
+  const value = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized.padEnd(6, '0').slice(0, 6);
+  const number = Number.parseInt(value, 16);
+  if (Number.isNaN(number)) return { r: 0, g: 0, b: 0 };
+
+  return {
+    r: (number >> 16) & 255,
+    g: (number >> 8) & 255,
+    b: number & 255,
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  const toHex = (value) => Math.round(clamp(value, 0, 255))
+    .toString(16)
+    .padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function mixColor(colorA, colorB, amount) {
+  const a = hexToRgb(colorA);
+  const b = hexToRgb(colorB);
+  const t = clamp(amount, 0, 1);
+
+  return rgbToHex({
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  });
+}
+
+function getColorBrightness(color) {
+  const { r, g, b } = hexToRgb(color);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function getEngraveColor(backgroundColor) {
+  return getColorBrightness(backgroundColor) > 0.5
+    ? mixColor(backgroundColor, '#000000', 0.22)
+    : mixColor(backgroundColor, '#ffffff', 0.28);
+}
+
+function getPalette(params) {
+  const background = params.backgroundColor ?? '#f5f1e8';
+  const stroke = params.motifStrokeColor ?? '#1f8fff';
+  const fill = params.motifFillColor ?? stroke;
+
+  if (params.invertPattern) {
+    return {
+      background: stroke,
+      stroke: background,
+      fill: background,
+    };
+  }
+
+  return { background, stroke, fill };
+}
+
+function getRoleStyle(role, params) {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === 'primary') {
+    return {
+      role: normalizedRole,
+      opacity: clamp(params.primaryOpacity ?? 0.9, 0, 1),
+      scale: Math.max(0.01, params.primaryScale ?? 1),
+      strokeWidth: Math.max(0.1, params.motifStrokeWidth ?? 2),
+    };
+  }
+  if (normalizedRole === 'secondary') {
+    return {
+      role: normalizedRole,
+      opacity: clamp(params.secondaryOpacity ?? 0.35, 0, 1),
+      scale: Math.max(0.01, params.secondaryScale ?? 0.72),
+      strokeWidth: Math.max(0.1, params.secondaryStrokeWidth ?? 1),
+    };
+  }
+
+  return {
+    role: normalizedRole,
+    opacity: clamp(params.accentOpacity ?? 0.65, 0, 1),
+    scale: Math.max(0.01, params.accentScale ?? 0.48),
+    strokeWidth: Math.max(0.1, params.accentStrokeWidth ?? 1.5),
+  };
+}
+
+function getPatternTreatment(patternStyle, editablePath) {
+  const style = patternStyle ?? 'hybrid';
+  const canFill = Boolean(editablePath.closed);
+
+  if (style === 'outline') {
+    return {
+      shouldFill: false,
+      shouldStroke: true,
+      fillAlpha: 0,
+      strokeAlpha: 1,
+      strokeWidthMultiplier: 1,
+      alphaMultiplier: 1,
+    };
+  }
+  if (style === 'solid') {
+    return {
+      shouldFill: canFill,
+      shouldStroke: !canFill,
+      fillAlpha: 1,
+      strokeAlpha: canFill ? 0 : 1,
+      strokeWidthMultiplier: 0.6,
+      alphaMultiplier: 1,
+    };
+  }
+  if (style === 'engrave') {
+    return {
+      shouldFill: canFill,
+      shouldStroke: true,
+      fillAlpha: 0.34,
+      strokeAlpha: 0.92,
+      strokeWidthMultiplier: 0.82,
+      alphaMultiplier: 0.5,
+    };
+  }
+  if (style === 'ghost') {
+    return {
+      shouldFill: canFill,
+      shouldStroke: true,
+      fillAlpha: 0.24,
+      strokeAlpha: 0.72,
+      strokeWidthMultiplier: 0.72,
+      alphaMultiplier: 0.28,
+    };
+  }
+
+  return {
+    shouldFill: canFill,
+    shouldStroke: true,
+    fillAlpha: 0.48,
+    strokeAlpha: 1,
+    strokeWidthMultiplier: 1,
+    alphaMultiplier: 1,
+  };
 }
 
 function seededRandom(rowIndex, columnIndex, motifIndex, salt = 0) {
@@ -237,11 +405,19 @@ function drawMotif(
   x,
   y,
   params,
+  role = 'primary',
   motifIndex = 0,
   cellTransform = {},
   options = {},
 ) {
   const useIndexVariation = options.useIndexVariation ?? true;
+  const pathBounds = options.pathBounds ?? bounds;
+  const roleStyle = getRoleStyle(role, params);
+  const treatment = getPatternTreatment(params.patternStyle, editablePath);
+  const palette = getPalette(params);
+  const isEngrave = (params.patternStyle ?? 'hybrid') === 'engrave';
+  const motifStrokeColor = isEngrave ? getEngraveColor(palette.background) : palette.stroke;
+  const motifFillColor = isEngrave ? getEngraveColor(palette.background) : palette.fill;
   const scale = Math.max(0.01, params.motifScale) * (cellTransform.extraScale ?? 1);
   const rotation = (
     (params.motifRotation ?? 0)
@@ -257,27 +433,41 @@ function drawMotif(
   );
   ctx.rotate(rotation);
   ctx.scale(scale, scale);
-  traceEditablePath(ctx, editablePath, bounds);
+  traceEditablePath(ctx, editablePath, bounds, pathBounds, roleStyle.scale);
 
-  ctx.globalAlpha = clamp(
-    (params.motifOpacity ?? 1) * (cellTransform.extraOpacity ?? 1),
+  const baseOpacity = clamp(
+    (params.motifOpacity ?? 1)
+      * roleStyle.opacity
+      * treatment.alphaMultiplier
+      * (cellTransform.extraOpacity ?? 1),
     0,
     1,
   );
-  if (params.motifFillEnabled && editablePath.closed) {
-    ctx.fillStyle = params.motifFillColor;
+
+  if (treatment.shouldFill) {
+    ctx.globalAlpha = clamp(baseOpacity * treatment.fillAlpha, 0, 1);
+    ctx.fillStyle = motifFillColor;
     ctx.fill();
   }
-  ctx.strokeStyle = params.motifStrokeColor;
-  ctx.lineWidth = Math.max(0.25, params.motifStrokeWidth / scale);
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.stroke();
+
+  if (treatment.shouldStroke) {
+    ctx.globalAlpha = clamp(baseOpacity * treatment.strokeAlpha, 0, 1);
+    ctx.strokeStyle = motifStrokeColor;
+    ctx.lineWidth = Math.max(
+      0.25,
+      (roleStyle.strokeWidth * treatment.strokeWidthMultiplier) / scale,
+    );
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 function drawMotifGroup(ctx, motifEntries, groupBounds, x, y, params, cellTransform) {
-  motifEntries.forEach(({ path, index }) => {
+  motifEntries.forEach(({
+    path, bounds, role, index,
+  }) => {
     drawMotif(
       ctx,
       path,
@@ -285,9 +475,13 @@ function drawMotifGroup(ctx, motifEntries, groupBounds, x, y, params, cellTransf
       x,
       y,
       params,
+      role,
       index,
       cellTransform,
-      { useIndexVariation: false },
+      {
+        pathBounds: bounds,
+        useIndexVariation: false,
+      },
     );
   });
 }
@@ -299,27 +493,39 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
 
   const { editablePath, selectedMotifs = [] } = extras;
   const { width: cw, height: ch } = canvas;
+  const palette = getPalette(params);
+  const backgroundColor = (params.patternStyle === 'engrave' && params.engraveBackground)
+    ? mixColor(palette.background, getEngraveColor(palette.background), 0.12)
+    : palette.background;
+
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = params.backgroundColor;
+  ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, cw, ch);
 
   const motifEntries = getMotifEntries(editablePath, selectedMotifs);
   if (!motifEntries.length) return;
 
   const scale = Math.max(0.01, params.motifScale);
+  const maxRoleScale = Math.max(
+    ...motifEntries.map(({ role }) => getRoleStyle(role, params).scale),
+  );
   const preserveLayout = (params.motifLayoutMode ?? 'preserveLayout') === 'preserveLayout'
     && hasSelectedMotifPaths(selectedMotifs);
   const groupBounds = preserveLayout ? getCombinedBounds(motifEntries) : null;
   const motifWidth = preserveLayout
-    ? groupBounds.width * scale
+    ? groupBounds.width * scale * maxRoleScale
     : Math.max(
-      ...motifEntries.map(({ bounds, index }) => (bounds.width * scale) + (index * 12)),
+      ...motifEntries.map(({ bounds, role, index }) => (
+        bounds.width * scale * getRoleStyle(role, params).scale
+      ) + (index * 12)),
     );
   const motifHeight = preserveLayout
-    ? groupBounds.height * scale
+    ? groupBounds.height * scale * maxRoleScale
     : Math.max(
-      ...motifEntries.map(({ bounds, index }) => (bounds.height * scale) + (index * 6)),
+      ...motifEntries.map(({ bounds, role, index }) => (
+        bounds.height * scale * getRoleStyle(role, params).scale
+      ) + (index * 6)),
     );
   const strideX = Math.max(MIN_STRIDE, motifWidth + params.motifSpacingX);
   const strideY = Math.max(MIN_STRIDE, motifHeight + params.motifSpacingY);
@@ -356,7 +562,9 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
         continue;
       }
 
-      motifEntries.forEach(({ path, bounds, index }) => {
+      motifEntries.forEach(({
+        path, bounds, role, index,
+      }) => {
         const cellTransform = getCellTransform({
           x: x + strideX / 2,
           y: y + strideY / 2,
@@ -376,8 +584,10 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
           x + strideX / 2,
           y + strideY / 2,
           params,
+          role,
           index,
           cellTransform,
+          { pathBounds: bounds },
         );
       });
     }

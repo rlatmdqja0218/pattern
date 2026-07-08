@@ -227,8 +227,8 @@
 
 .vector-editor__candidate {
   display: grid;
-  flex: 0 0 276px;
-  grid-template-columns: auto minmax(72px, 1fr) auto;
+  flex: 0 0 376px;
+  grid-template-columns: auto minmax(72px, 1fr) 90px auto;
   align-items: center;
   gap: 7px;
   min-width: 0;
@@ -258,6 +258,12 @@
   box-shadow: inset 0 0 0 1px #7bd4ff;
 }
 
+.vector-editor__candidate.role-ignore {
+  color: #6f7886;
+  border-color: #262d35;
+  background: #171c22;
+}
+
 .vector-editor__candidate-toggle {
   display: flex;
   align-items: center;
@@ -280,6 +286,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vector-editor__candidate-role {
+  width: 90px;
+  height: 22px;
+  border: 1px solid #3a4350;
+  border-radius: 5px;
+  background: #11161b;
+  color: #c0cad7;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .vector-editor__candidate-edit {

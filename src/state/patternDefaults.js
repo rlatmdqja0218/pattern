@@ -93,6 +93,62 @@ export const patternControlSchema = {
     value: 1, min: 0.05, max: 1, step: 0.05,
     label: '모티프 투명도', render: isVector,
   },
+  patternStyle: {
+    value: 'hybrid',
+    options: ['outline', 'solid', 'hybrid', 'engrave', 'ghost'],
+    label: '패턴 스타일',
+    render: isVector,
+  },
+  primaryOpacity: {
+    value: 0.9, min: 0, max: 1, step: 0.05,
+    label: 'Primary 투명도',
+    render: isVector,
+  },
+  secondaryOpacity: {
+    value: 0.35, min: 0, max: 1, step: 0.05,
+    label: 'Secondary 투명도',
+    render: isVector,
+  },
+  accentOpacity: {
+    value: 0.65, min: 0, max: 1, step: 0.05,
+    label: 'Accent 투명도',
+    render: isVector,
+  },
+  primaryScale: {
+    value: 1, min: 0.2, max: 3, step: 0.05,
+    label: 'Primary 크기',
+    render: isVector,
+  },
+  secondaryScale: {
+    value: 0.72, min: 0.2, max: 3, step: 0.05,
+    label: 'Secondary 크기',
+    render: isVector,
+  },
+  accentScale: {
+    value: 0.48, min: 0.2, max: 3, step: 0.05,
+    label: 'Accent 크기',
+    render: isVector,
+  },
+  secondaryStrokeWidth: {
+    value: 1, min: 0.1, max: 10, step: 0.1,
+    label: 'Secondary 선 두께',
+    render: isVector,
+  },
+  accentStrokeWidth: {
+    value: 1.5, min: 0.1, max: 10, step: 0.1,
+    label: 'Accent 선 두께',
+    render: isVector,
+  },
+  engraveBackground: {
+    value: false,
+    label: '음각 배경',
+    render: isVector,
+  },
+  invertPattern: {
+    value: false,
+    label: '패턴 반전',
+    render: isVector,
+  },
   motifLayoutMode: {
     value: 'preserveLayout',
     options: ['preserveLayout', 'isolated'],

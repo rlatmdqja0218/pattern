@@ -26,6 +26,7 @@ const HIT_OPTIONS = {
 const TRACE_ANALYSIS_SIZE = 640;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 6;
+const CANDIDATE_ROLES = ['primary', 'secondary', 'accent', 'ignore'];
 
 function getStatusLabel(hitType) {
   if (hitType === 'segment') return '앵커 드래그 중';
@@ -80,16 +81,35 @@ function getCandidateLabel(candidate, index) {
   return `후보 ${index + 1} · ${shapeHint} · ${area}/${length}`;
 }
 
-function getSelectedMotifs(pathCandidates, selectedCandidateIds) {
+function getDefaultCandidateRole(index) {
+  if (index === 0) return 'primary';
+  if (index === 1 || index === 2) return 'secondary';
+  return 'accent';
+}
+
+function createDefaultCandidateRoles(candidates) {
+  return Object.fromEntries(
+    candidates.map((candidate, index) => [candidate.id, getDefaultCandidateRole(index)]),
+  );
+}
+
+function getSelectedMotifs(pathCandidates, selectedCandidateIds, candidateRoles) {
   return selectedCandidateIds
     .map((candidateId) => pathCandidates.find((candidate) => candidate.id === candidateId))
     .filter(Boolean)
-    .map(({ id, area, length, editablePath }) => ({
-      id,
-      area,
-      length,
-      editablePath: clonePathData(editablePath),
-    }));
+    .map(({ id, area, length, editablePath }) => {
+      const role = candidateRoles[id] ?? 'accent';
+      if (role === 'ignore') return null;
+
+      return {
+        id,
+        area,
+        length,
+        role,
+        editablePath: clonePathData(editablePath),
+      };
+    })
+    .filter(Boolean);
 }
 
 function shouldIgnoreSpaceShortcut(event) {
@@ -119,6 +139,7 @@ export default function VectorEditorCanvas({
   const [zoomPercent, setZoomPercent] = useState(100);
   const [pathCandidates, setPathCandidates] = useState([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  const [candidateRoles, setCandidateRoles] = useState({});
   const [editingCandidateId, setEditingCandidateId] = useState(null);
   const hasCanvasSize = width > 0 && height > 0;
   const {
@@ -154,9 +175,9 @@ export default function VectorEditorCanvas({
 
   useEffect(() => {
     onMotifsChangeRef.current?.(
-      getSelectedMotifs(pathCandidates, selectedCandidateIds),
+      getSelectedMotifs(pathCandidates, selectedCandidateIds, candidateRoles),
     );
-  }, [pathCandidates, selectedCandidateIds]);
+  }, [candidateRoles, pathCandidates, selectedCandidateIds]);
 
   const applyCandidate = useCallback((candidate) => {
     const scope = scopeRef.current;
@@ -179,12 +200,42 @@ export default function VectorEditorCanvas({
 
   const handleCandidateToggle = useCallback((event, candidate, index) => {
     event.stopPropagation();
+    const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole(index);
+    if (role === 'ignore') {
+      setCandidateRoles((currentRoles) => ({
+        ...currentRoles,
+        [candidate.id]: getDefaultCandidateRole(index),
+      }));
+      setSelectedCandidateIds((currentIds) => (
+        currentIds.includes(candidate.id) ? currentIds : [...currentIds, candidate.id]
+      ));
+      setStatus(`후보 ${index + 1} 패턴 포함 상태 변경`);
+      return;
+    }
+
     setSelectedCandidateIds((currentIds) => (
       currentIds.includes(candidate.id)
         ? currentIds.filter((candidateId) => candidateId !== candidate.id)
         : [...currentIds, candidate.id]
     ));
     setStatus(`후보 ${index + 1} 패턴 포함 상태 변경`);
+  }, [candidateRoles]);
+
+  const handleCandidateRoleChange = useCallback((event, candidate, index) => {
+    event.stopPropagation();
+    const role = event.target.value;
+
+    setCandidateRoles((currentRoles) => ({
+      ...currentRoles,
+      [candidate.id]: role,
+    }));
+    setSelectedCandidateIds((currentIds) => {
+      if (role === 'ignore') {
+        return currentIds.filter((candidateId) => candidateId !== candidate.id);
+      }
+      return currentIds.includes(candidate.id) ? currentIds : [...currentIds, candidate.id];
+    });
+    setStatus(`후보 ${index + 1} 역할: ${role}`);
   }, []);
 
   const syncZoomState = useCallback(() => {
@@ -451,6 +502,7 @@ export default function VectorEditorCanvas({
     if (!imageUrl) {
       setPathCandidates([]);
       setSelectedCandidateIds([]);
+      setCandidateRoles({});
       setEditingCandidateId(null);
       setStatus('앵커 또는 핸들을 직접 드래그하세요');
       return undefined;
@@ -464,6 +516,7 @@ export default function VectorEditorCanvas({
     let disposed = false;
     setPathCandidates([]);
     setSelectedCandidateIds([]);
+    setCandidateRoles({});
     setEditingCandidateId(null);
     setStatus('자동 윤곽 추출 중');
 
@@ -488,12 +541,14 @@ export default function VectorEditorCanvas({
         if (!candidates.length) {
           setPathCandidates([]);
           setSelectedCandidateIds([]);
+          setCandidateRoles({});
           setEditingCandidateId(null);
           setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
           return;
         }
 
         setPathCandidates(candidates);
+        setCandidateRoles(createDefaultCandidateRoles(candidates));
         setSelectedCandidateIds([candidates[0].id]);
         applyCandidate(candidates[0]);
         setStatus(`자동 윤곽 추출 완료 · 후보 ${candidates.length}개`);
@@ -546,12 +601,14 @@ export default function VectorEditorCanvas({
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
           {pathCandidates.map((candidate, index) => {
-            const isSelected = selectedCandidateIds.includes(candidate.id);
+            const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole(index);
+            const isSelected = role !== 'ignore' && selectedCandidateIds.includes(candidate.id);
             const isEditing = candidate.id === editingCandidateId;
             const className = [
               'vector-editor__candidate',
               isSelected ? 'is-selected' : '',
               isEditing ? 'is-editing' : '',
+              `role-${role}`,
             ].filter(Boolean).join(' ');
 
             return (
@@ -585,6 +642,20 @@ export default function VectorEditorCanvas({
                 <span className="vector-editor__candidate-label">
                   {getCandidateLabel(candidate, index)}
                 </span>
+                <select
+                  className="vector-editor__candidate-role"
+                  value={role}
+                  aria-label={`후보 ${index + 1} 역할`}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  onChange={(event) => handleCandidateRoleChange(event, candidate, index)}
+                >
+                  {CANDIDATE_ROLES.map((candidateRole) => (
+                    <option key={candidateRole} value={candidateRole}>
+                      {candidateRole}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   className="vector-editor__candidate-edit"
