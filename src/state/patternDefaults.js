@@ -54,6 +54,20 @@ export const patternControlSchema = {
   },
 
   // — Vector(편집 경로 모티프) 전용 —
+  patternPreset: {
+    value: 'custom',
+    options: [
+      'custom',
+      't1SpeedFlow',
+      'microTech',
+      'luxuryEngrave',
+      'ghostMonogram',
+      'diagonalSlash',
+      'denseEdgeFade',
+    ],
+    label: '패턴 프리셋',
+    render: isVector,
+  },
   motifScale: {
     value: 0.55, min: 0.05, max: 3, step: 0.05,
     label: '모티프 크기', render: isVector,
