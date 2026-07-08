@@ -1,9 +1,12 @@
 import paper from 'paper';
 import { useEffect, useRef, useState } from 'react';
 import {
+  applySerializedPath,
   createDefaultEditablePath,
   serializePaperPath,
 } from '../engines/editablePath';
+import { analyzeImage, loadImage } from '../engines/imageAnalysis';
+import { traceImageDataToEditablePathData } from '../engines/vectorTrace';
 import { useElementSize } from '../hooks/useElementSize';
 
 const HIT_OPTIONS = {
@@ -12,6 +15,14 @@ const HIT_OPTIONS = {
   stroke: false,
   fill: false,
   tolerance: 18,
+};
+
+const TRACE_ANALYSIS_SIZE = 640;
+const TRACE_OPTIONS = {
+  traceMode: 'auto',
+  traceThreshold: 0.52,
+  traceSimplify: 10,
+  traceInvert: false,
 };
 
 function getStatusLabel(hitType) {
@@ -30,6 +41,31 @@ function fitRasterToView(scope, raster) {
   const scale = Math.min(width / rasterWidth, height / rasterHeight);
   raster.scaling = new scope.Point(scale, scale);
   raster.position = scope.view.center;
+}
+
+function fitPathDataToView(pathData, imageSize, scope) {
+  const { width, height } = scope.view.size;
+  const scale = Math.min(width / imageSize.width, height / imageSize.height);
+  const offsetX = (width - imageSize.width * scale) / 2;
+  const offsetY = (height - imageSize.height * scale) / 2;
+
+  return {
+    ...pathData,
+    segments: pathData.segments.map((segment) => ({
+      point: {
+        x: offsetX + segment.point.x * scale,
+        y: offsetY + segment.point.y * scale,
+      },
+      handleIn: {
+        x: segment.handleIn.x * scale,
+        y: segment.handleIn.y * scale,
+      },
+      handleOut: {
+        x: segment.handleOut.x * scale,
+        y: segment.handleOut.y * scale,
+      },
+    })),
+  };
 }
 
 export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
@@ -58,7 +94,7 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
     scopeRef.current = scope;
     setStatus(
       imageUrl
-        ? '참고 이미지 로딩 중'
+        ? '참고 이미지 로딩 및 윤곽 추출 중'
         : '앵커 또는 핸들을 직접 드래그하세요',
     );
 
@@ -77,7 +113,6 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
       raster.onLoad = () => {
         if (disposed) return;
         fitRasterToView(scope, raster);
-        setStatus('참고 이미지 위에서 앵커 또는 핸들을 드래그하세요');
         scope.view.update();
       };
     }
@@ -87,6 +122,40 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
     const editablePath = createDefaultEditablePath(scope);
     pathRef.current = editablePath;
     onPathChange?.(serializePaperPath(editablePath));
+
+    if (imageUrl) {
+      loadImage(imageUrl)
+        .then((image) => {
+          if (disposed) return null;
+          return analyzeImage(image, TRACE_ANALYSIS_SIZE);
+        })
+        .then((analysis) => {
+          if (disposed || !analysis) return;
+          const tracedPathData = traceImageDataToEditablePathData(
+            analysis.imageData,
+            TRACE_OPTIONS,
+          );
+          if (!tracedPathData?.segments?.length) {
+            setStatus('윤곽 추출 실패 · 기본 경로로 편집하세요');
+            return;
+          }
+
+          const fittedPathData = fitPathDataToView(
+            tracedPathData,
+            analysis.imageData,
+            scope,
+          );
+          applySerializedPath(editablePath, fittedPathData);
+          editablePath.selected = true;
+          editablePath.fullySelected = true;
+          scope.view.update();
+          onPathChange?.(serializePaperPath(editablePath));
+          setStatus('자동 윤곽 추출 완료 · 앵커 또는 핸들을 드래그하세요');
+        })
+        .catch(() => {
+          if (!disposed) setStatus('윤곽 추출 실패 · 기본 경로로 편집하세요');
+        });
+    }
 
     const tool = new scope.Tool();
 
