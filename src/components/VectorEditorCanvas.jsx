@@ -69,17 +69,37 @@ function getCandidateLabel(candidate, index) {
   return `후보 ${index + 1} · ${shapeHint} · ${area}/${length}`;
 }
 
-export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange }) {
+function getSelectedMotifs(pathCandidates, selectedCandidateIds) {
+  return selectedCandidateIds
+    .map((candidateId) => pathCandidates.find((candidate) => candidate.id === candidateId))
+    .filter(Boolean)
+    .map(({ id, area, length, editablePath }) => ({
+      id,
+      area,
+      length,
+      editablePath,
+    }));
+}
+
+export default function VectorEditorCanvas({
+  imageUrl,
+  params = {},
+  onPathChange,
+  onMotifsChange,
+}) {
   const canvasRef = useRef(null);
   const scopeRef = useRef(null);
   const pathRef = useRef(null);
   const rasterRef = useRef(null);
   const dragTargetRef = useRef(null);
   const onPathChangeRef = useRef(onPathChange);
+  const onMotifsChangeRef = useRef(onMotifsChange);
+  const editingCandidateIdRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
   const [pathCandidates, setPathCandidates] = useState([]);
-  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  const [editingCandidateId, setEditingCandidateId] = useState(null);
   const {
     traceMode = 'auto',
     traceThreshold = 0.52,
@@ -92,20 +112,46 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
     onPathChangeRef.current = onPathChange;
   }, [onPathChange]);
 
+  useEffect(() => {
+    onMotifsChangeRef.current = onMotifsChange;
+  }, [onMotifsChange]);
+
+  useEffect(() => {
+    editingCandidateIdRef.current = editingCandidateId;
+  }, [editingCandidateId]);
+
+  useEffect(() => {
+    onMotifsChangeRef.current?.(
+      getSelectedMotifs(pathCandidates, selectedCandidateIds),
+    );
+  }, [pathCandidates, selectedCandidateIds]);
+
   const applyCandidate = useCallback((candidate) => {
     const scope = scopeRef.current;
     const editablePath = pathRef.current;
     const imageSize = candidate?.editablePath?.trace;
-    if (!scope || !editablePath || !candidate?.editablePath || !imageSize) return;
+    if (!scope || !editablePath || !candidate?.editablePath?.segments?.length) return;
 
-    const fittedPathData = fitPathDataToView(candidate.editablePath, imageSize, scope);
-    applySerializedPath(editablePath, fittedPathData);
+    const pathData = imageSize
+      ? fitPathDataToView(candidate.editablePath, imageSize, scope)
+      : candidate.editablePath;
+    applySerializedPath(editablePath, pathData);
     editablePath.selected = true;
     editablePath.fullySelected = true;
     scope.view.update();
-    setSelectedCandidateId(candidate.id);
+    setEditingCandidateId(candidate.id);
     onPathChangeRef.current?.(serializePaperPath(editablePath));
   }, []);
+
+  const handleCandidateClick = useCallback((candidate, index) => {
+    setSelectedCandidateIds((currentIds) => (
+      currentIds.includes(candidate.id)
+        ? currentIds.filter((candidateId) => candidateId !== candidate.id)
+        : [...currentIds, candidate.id]
+    ));
+    applyCandidate(candidate);
+    setStatus(`후보 ${index + 1} 편집 중 · 선택 후보들이 패턴에 포함됩니다`);
+  }, [applyCandidate]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -190,7 +236,17 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
       editablePath.selected = true;
       editablePath.fullySelected = true;
       scope.view.update();
-      onPathChangeRef.current?.(serializePaperPath(editablePath));
+      const serializedPath = serializePaperPath(editablePath);
+      onPathChangeRef.current?.(serializedPath);
+
+      const editingCandidateId = editingCandidateIdRef.current;
+      if (editingCandidateId) {
+        setPathCandidates((currentCandidates) => currentCandidates.map((candidate) => (
+          candidate.id === editingCandidateId
+            ? { ...candidate, editablePath: serializedPath }
+            : candidate
+        )));
+      }
     };
 
     tool.onMouseUp = () => {
@@ -219,7 +275,8 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
 
     if (!imageUrl) {
       setPathCandidates([]);
-      setSelectedCandidateId(null);
+      setSelectedCandidateIds([]);
+      setEditingCandidateId(null);
       setStatus('앵커 또는 핸들을 직접 드래그하세요');
       return undefined;
     }
@@ -231,7 +288,8 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
 
     let disposed = false;
     setPathCandidates([]);
-    setSelectedCandidateId(null);
+    setSelectedCandidateIds([]);
+    setEditingCandidateId(null);
     setStatus('자동 윤곽 추출 중');
 
     loadImage(imageUrl)
@@ -251,12 +309,14 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
         });
         if (!candidates.length) {
           setPathCandidates([]);
-          setSelectedCandidateId(null);
+          setSelectedCandidateIds([]);
+          setEditingCandidateId(null);
           setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
           return;
         }
 
         setPathCandidates(candidates);
+        setSelectedCandidateIds([candidates[0].id]);
         applyCandidate(candidates[0]);
         setStatus(`자동 윤곽 추출 완료 · 후보 ${candidates.length}개`);
       })
@@ -287,23 +347,30 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
       </header>
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
-          {pathCandidates.map((candidate, index) => (
-            <button
-              type="button"
-              key={candidate.id}
-              className={
-                candidate.id === selectedCandidateId
-                  ? 'vector-editor__candidate is-selected'
-                  : 'vector-editor__candidate'
-              }
-              onClick={() => {
-                applyCandidate(candidate);
-                setStatus(`후보 ${index + 1} 적용 · 앵커 또는 핸들을 드래그하세요`);
-              }}
-            >
-              {getCandidateLabel(candidate, index)}
-            </button>
-          ))}
+          {pathCandidates.map((candidate, index) => {
+            const isSelected = selectedCandidateIds.includes(candidate.id);
+            const isEditing = candidate.id === editingCandidateId;
+            const className = [
+              'vector-editor__candidate',
+              isSelected ? 'is-selected' : '',
+              isEditing ? 'is-editing' : '',
+            ].filter(Boolean).join(' ');
+
+            return (
+              <button
+                type="button"
+                key={candidate.id}
+                className={className}
+                aria-pressed={isSelected}
+                title={`${isSelected ? '패턴 포함' : '패턴 제외'} · ${
+                  isEditing ? '현재 편집 중' : '클릭하면 편집 대상'
+                }`}
+                onClick={() => handleCandidateClick(candidate, index)}
+              >
+                {getCandidateLabel(candidate, index)}
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="preview-panel__body vector-editor__body" ref={containerRef}>

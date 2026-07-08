@@ -74,12 +74,36 @@ function traceEditablePath(ctx, editablePath, bounds) {
   }
 }
 
-function drawMotif(ctx, editablePath, bounds, x, y, params) {
+function hasRenderablePath(editablePath) {
+  return Boolean(editablePath?.segments?.length);
+}
+
+function getMotifEntries(editablePath, selectedMotifs = []) {
+  const selectedPaths = Array.isArray(selectedMotifs)
+    ? selectedMotifs
+      .map((motif) => motif.editablePath)
+      .filter(hasRenderablePath)
+    : [];
+  const paths = selectedPaths.length
+    ? selectedPaths
+    : hasRenderablePath(editablePath)
+      ? [editablePath]
+      : [];
+
+  return paths.map((path, index) => ({
+    path,
+    bounds: getPathBounds(path.segments),
+    index,
+  }));
+}
+
+function drawMotif(ctx, editablePath, bounds, x, y, params, motifIndex = 0) {
   const scale = Math.max(0.01, params.motifScale);
-  const rotation = (params.motifRotation * Math.PI) / 180;
+  const rotation = ((params.motifRotation + motifIndex * 8) * Math.PI) / 180;
+  const offset = motifIndex * 12;
 
   ctx.save();
-  ctx.translate(x, y);
+  ctx.translate(x + offset, y + offset * 0.5);
   ctx.rotate(rotation);
   ctx.scale(scale, scale);
   traceEditablePath(ctx, editablePath, bounds);
@@ -102,19 +126,23 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const { editablePath } = extras;
+  const { editablePath, selectedMotifs = [] } = extras;
   const { width: cw, height: ch } = canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.fillStyle = params.backgroundColor;
   ctx.fillRect(0, 0, cw, ch);
 
-  if (!editablePath?.segments?.length) return;
+  const motifEntries = getMotifEntries(editablePath, selectedMotifs);
+  if (!motifEntries.length) return;
 
-  const bounds = getPathBounds(editablePath.segments);
   const scale = Math.max(0.01, params.motifScale);
-  const motifWidth = bounds.width * scale;
-  const motifHeight = bounds.height * scale;
+  const motifWidth = Math.max(
+    ...motifEntries.map(({ bounds, index }) => (bounds.width * scale) + (index * 12)),
+  );
+  const motifHeight = Math.max(
+    ...motifEntries.map(({ bounds, index }) => (bounds.height * scale) + (index * 6)),
+  );
   const strideX = Math.max(MIN_STRIDE, motifWidth + params.motifSpacingX);
   const strideY = Math.max(MIN_STRIDE, motifHeight + params.motifSpacingY);
   const startX = -strideX;
@@ -122,14 +150,17 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
 
   for (let y = startY; y < ch + strideY; y += strideY) {
     for (let x = startX; x < cw + strideX; x += strideX) {
-      drawMotif(
-        ctx,
-        editablePath,
-        bounds,
-        x + strideX / 2,
-        y + strideY / 2,
-        params,
-      );
+      motifEntries.forEach(({ path, bounds, index }) => {
+        drawMotif(
+          ctx,
+          path,
+          bounds,
+          x + strideX / 2,
+          y + strideY / 2,
+          params,
+          index,
+        );
+      });
     }
   }
 

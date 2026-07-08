@@ -10,7 +10,12 @@ import { useElementSize } from '../hooks/useElementSize';
  * 렌더링 알고리즘은 전부 engines/ 폴더에 있고, 이 컴포넌트는
  * canvas ref 관리와 "언제 다시 그릴지"만 담당한다.
  */
-export default function PatternCanvas({ imageUrl, params, editablePath }) {
+export default function PatternCanvas({
+  imageUrl,
+  params,
+  editablePath,
+  selectedMotifs = [],
+}) {
   const canvasRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
   const [analysis, setAnalysis] = useState(null); // { imageData, width, height }
@@ -48,8 +53,8 @@ export default function PatternCanvas({ imageUrl, params, editablePath }) {
     if (!isVectorMode && !analysis) return;
 
     const render = PATTERN_RENDERERS[params.mode] ?? PATTERN_RENDERERS.halftone;
-    render(canvas, analysis?.imageData ?? null, params, { editablePath });
-  }, [analysis, editablePath, isVectorMode, params, width, height]);
+    render(canvas, analysis?.imageData ?? null, params, { editablePath, selectedMotifs });
+  }, [analysis, editablePath, isVectorMode, params, selectedMotifs, width, height]);
 
   // 캔버스 백킹 스토어는 devicePixelRatio를 반영해 선명하게 유지
   const dpr = window.devicePixelRatio || 1;

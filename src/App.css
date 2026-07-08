@@ -146,6 +146,10 @@
   background: #12304a;
 }
 
+.vector-editor__candidate.is-editing {
+  box-shadow: inset 0 0 0 1px #7bd4ff;
+}
+
 .vector-editor__canvas {
   width: 100%;
   height: 100%;
