@@ -1,12 +1,12 @@
 import paper from 'paper';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   applySerializedPath,
   createDefaultEditablePath,
   serializePaperPath,
 } from '../engines/editablePath';
 import { analyzeImage, loadImage } from '../engines/imageAnalysis';
-import { traceImageDataToEditablePathData } from '../engines/vectorTrace';
+import { traceImageDataToPathCandidates } from '../engines/vectorTrace';
 import { useElementSize } from '../hooks/useElementSize';
 
 const HIT_OPTIONS = {
@@ -62,6 +62,13 @@ function fitPathDataToView(pathData, imageSize, scope) {
   };
 }
 
+function getCandidateLabel(candidate, index) {
+  const area = Math.round(candidate.area);
+  const length = Math.round(candidate.length);
+  const shapeHint = length > Math.sqrt(Math.max(1, area)) * 8 ? '긴 선' : '큰 면';
+  return `후보 ${index + 1} · ${shapeHint} · ${area}/${length}`;
+}
+
 export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange }) {
   const canvasRef = useRef(null);
   const scopeRef = useRef(null);
@@ -71,6 +78,8 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
   const onPathChangeRef = useRef(onPathChange);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
+  const [pathCandidates, setPathCandidates] = useState([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
   const {
     traceMode = 'auto',
     traceThreshold = 0.52,
@@ -82,6 +91,21 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
   useEffect(() => {
     onPathChangeRef.current = onPathChange;
   }, [onPathChange]);
+
+  const applyCandidate = useCallback((candidate) => {
+    const scope = scopeRef.current;
+    const editablePath = pathRef.current;
+    const imageSize = candidate?.editablePath?.trace;
+    if (!scope || !editablePath || !candidate?.editablePath || !imageSize) return;
+
+    const fittedPathData = fitPathDataToView(candidate.editablePath, imageSize, scope);
+    applySerializedPath(editablePath, fittedPathData);
+    editablePath.selected = true;
+    editablePath.fullySelected = true;
+    scope.view.update();
+    setSelectedCandidateId(candidate.id);
+    onPathChangeRef.current?.(serializePaperPath(editablePath));
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -194,6 +218,8 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
     if (!scope || !editablePath || width <= 0 || height <= 0) return undefined;
 
     if (!imageUrl) {
+      setPathCandidates([]);
+      setSelectedCandidateId(null);
       setStatus('앵커 또는 핸들을 직접 드래그하세요');
       return undefined;
     }
@@ -204,6 +230,8 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
     }
 
     let disposed = false;
+    setPathCandidates([]);
+    setSelectedCandidateId(null);
     setStatus('자동 윤곽 추출 중');
 
     loadImage(imageUrl)
@@ -214,29 +242,23 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
       .then((analysis) => {
         if (disposed || !analysis) return;
 
-        const tracedPathData = traceImageDataToEditablePathData(analysis.imageData, {
+        const candidates = traceImageDataToPathCandidates(analysis.imageData, {
           traceMode,
           traceThreshold,
           traceSimplify,
           traceInvert,
           maxSegments: traceMaxSegments,
         });
-        if (!tracedPathData?.segments?.length) {
+        if (!candidates.length) {
+          setPathCandidates([]);
+          setSelectedCandidateId(null);
           setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
           return;
         }
 
-        const fittedPathData = fitPathDataToView(
-          tracedPathData,
-          analysis.imageData,
-          scope,
-        );
-        applySerializedPath(editablePath, fittedPathData);
-        editablePath.selected = true;
-        editablePath.fullySelected = true;
-        scope.view.update();
-        onPathChangeRef.current?.(serializePaperPath(editablePath));
-        setStatus('자동 윤곽 추출 완료 · 앵커 또는 핸들을 드래그하세요');
+        setPathCandidates(candidates);
+        applyCandidate(candidates[0]);
+        setStatus(`자동 윤곽 추출 완료 · 후보 ${candidates.length}개`);
       })
       .catch(() => {
         if (!disposed) setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
@@ -247,6 +269,7 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
     };
   }, [
     imageUrl,
+    applyCandidate,
     traceInvert,
     traceMaxSegments,
     traceMode,
@@ -262,6 +285,27 @@ export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange
         <h2>벡터 편집 레이어</h2>
         <span className="preview-panel__meta">{status}</span>
       </header>
+      {pathCandidates.length > 0 && (
+        <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
+          {pathCandidates.map((candidate, index) => (
+            <button
+              type="button"
+              key={candidate.id}
+              className={
+                candidate.id === selectedCandidateId
+                  ? 'vector-editor__candidate is-selected'
+                  : 'vector-editor__candidate'
+              }
+              onClick={() => {
+                applyCandidate(candidate);
+                setStatus(`후보 ${index + 1} 적용 · 앵커 또는 핸들을 드래그하세요`);
+              }}
+            >
+              {getCandidateLabel(candidate, index)}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="preview-panel__body vector-editor__body" ref={containerRef}>
         <canvas ref={canvasRef} className="vector-editor__canvas" />
       </div>

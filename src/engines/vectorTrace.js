@@ -6,6 +6,8 @@ export const DEFAULT_TRACE_OPTIONS = {
   traceSimplify: 10,
   traceInvert: false,
   maxSegments: 96,
+  maxCandidates: 8,
+  minCandidateArea: 24,
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -154,9 +156,9 @@ function pointsToEditablePathData(points) {
   };
 }
 
-function getLargestForegroundPath(svgString, options) {
+function getForegroundPathSamples(svgString, options) {
   const hiddenSvg = makeHiddenSvg(svgString);
-  if (!hiddenSvg) return null;
+  if (!hiddenSvg) return [];
 
   try {
     const paths = [...hiddenSvg.svg.querySelectorAll('path')];
@@ -166,7 +168,8 @@ function getLargestForegroundPath(svgString, options) {
     return candidates
       .map((path) => sampleSvgPath(path, options))
       .filter(Boolean)
-      .sort((a, b) => b.area - a.area || b.length - a.length)[0] ?? null;
+      .filter((candidate) => candidate.area >= options.minCandidateArea)
+      .sort((a, b) => b.area - a.area || b.length - a.length);
   } finally {
     hiddenSvg.host.remove();
   }
@@ -212,26 +215,39 @@ export function simplifyEditablePathData(pathData, options = {}) {
   return pointsToEditablePathData(simplifiedPoints);
 }
 
-export function traceImageDataToEditablePathData(imageData, options = {}) {
+export function traceImageDataToPathCandidates(imageData, options = {}) {
   const traceOptions = normalizeOptions(options);
-  if (!imageData || traceOptions.traceMode !== 'auto') return null;
-  if (typeof document === 'undefined') return null;
+  if (!imageData || traceOptions.traceMode !== 'auto') return [];
+  if (typeof document === 'undefined') return [];
 
   const svg = traceImageDataToSvg(imageData, traceOptions);
-  const tracedPath = getLargestForegroundPath(svg, traceOptions);
-  if (!tracedPath) return null;
+  return getForegroundPathSamples(svg, traceOptions)
+    .slice(0, Math.max(1, traceOptions.maxCandidates))
+    .map((tracedPath, index) => {
+      const pathData = pointsToEditablePathData(tracedPath.points);
+      const editablePath = simplifyEditablePathData(pathData, traceOptions);
+      if (!editablePath) return null;
 
-  const pathData = pointsToEditablePathData(tracedPath.points);
-  const simplifiedPathData = simplifyEditablePathData(pathData, traceOptions);
-  if (!simplifiedPathData) return null;
+      return {
+        id: `path-${index}`,
+        area: Number(tracedPath.area.toFixed(1)),
+        length: Number(tracedPath.length.toFixed(1)),
+        pathData: tracedPath.pathData,
+        editablePath: {
+          ...editablePath,
+          trace: {
+            svg,
+            pathData: tracedPath.pathData,
+            width: imageData.width,
+            height: imageData.height,
+          },
+        },
+      };
+    })
+    .filter(Boolean);
+}
 
-  return {
-    ...simplifiedPathData,
-    trace: {
-      svg,
-      pathData: tracedPath.pathData,
-      width: imageData.width,
-      height: imageData.height,
-    },
-  };
+export function traceImageDataToEditablePathData(imageData, options = {}) {
+  const [firstCandidate] = traceImageDataToPathCandidates(imageData, options);
+  return firstCandidate?.editablePath ?? null;
 }

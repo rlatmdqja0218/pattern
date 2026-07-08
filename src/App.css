@@ -107,6 +107,45 @@
   overflow: hidden;
 }
 
+.vector-editor__candidates {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-bottom: 1px solid #2a2f36;
+  background: #15191e;
+}
+
+.vector-editor__candidate {
+  flex: 0 0 auto;
+  min-width: 72px;
+  max-width: 180px;
+  height: 26px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid #303842;
+  border-radius: 6px;
+  background: #1d232a;
+  color: #98a2b3;
+  font: inherit;
+  font-size: 11px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vector-editor__candidate:hover {
+  color: #d9e2ef;
+  border-color: #3f4c5b;
+}
+
+.vector-editor__candidate.is-selected {
+  color: #e9f4ff;
+  border-color: #2f9cff;
+  background: #12304a;
+}
+
 .vector-editor__canvas {
   width: 100%;
   height: 100%;
