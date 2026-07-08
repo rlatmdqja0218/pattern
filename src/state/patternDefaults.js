@@ -119,6 +119,22 @@ export const patternControlSchema = {
     label: '최대 앵커 수',
     render: isVector,
   },
+  curveMode: {
+    value: 'straight',
+    options: ['straight', 'smooth'],
+    label: '곡선화 방식',
+    render: isVector,
+  },
+  curveSmoothness: {
+    value: 0.45, min: 0, max: 1, step: 0.05,
+    label: '곡선 부드러움',
+    render: isVector,
+  },
+  curveSimplifyTolerance: {
+    value: 2, min: 0, max: 20, step: 0.5,
+    label: '곡선 단순화',
+    render: isVector,
+  },
 
   // — 공통 —
   backgroundColor: { value: '#f5f1e8', label: '배경 색상' },

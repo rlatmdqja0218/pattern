@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PATTERN_RENDERERS, loadImage, analyzeImage } from '../engines';
 import { useElementSize } from '../hooks/useElementSize';
+import PreviewPanel from './PreviewPanel';
 
 /**
  * 2D 패턴 캔버스
@@ -15,6 +16,7 @@ export default function PatternCanvas({
   params,
   editablePath,
   selectedMotifs = [],
+  onPatternCanvasUpdate,
 }) {
   const canvasRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
@@ -54,7 +56,17 @@ export default function PatternCanvas({
 
     const render = PATTERN_RENDERERS[params.mode] ?? PATTERN_RENDERERS.halftone;
     render(canvas, analysis?.imageData ?? null, params, { editablePath, selectedMotifs });
-  }, [analysis, editablePath, isVectorMode, params, selectedMotifs, width, height]);
+    onPatternCanvasUpdate?.(canvas);
+  }, [
+    analysis,
+    editablePath,
+    isVectorMode,
+    onPatternCanvasUpdate,
+    params,
+    selectedMotifs,
+    width,
+    height,
+  ]);
 
   // 캔버스 백킹 스토어는 devicePixelRatio를 반영해 선명하게 유지
   const dpr = window.devicePixelRatio || 1;
@@ -67,11 +79,7 @@ export default function PatternCanvas({
         : `${params.mode} · 배율 ${params.tileScale} · 간격 ${params.tileSpacing}px`;
 
   return (
-    <section className="preview-panel">
-      <header className="preview-panel__header">
-        <h2>2D 패턴 프리뷰</h2>
-        <span className="preview-panel__meta">{meta}</span>
-      </header>
+    <PreviewPanel title="2D 패턴 프리뷰" meta={meta}>
       <div className="preview-panel__body" ref={containerRef}>
         {shouldShowCanvas && (
           <canvas
@@ -95,6 +103,6 @@ export default function PatternCanvas({
           </p>
         )}
       </div>
-    </section>
+    </PreviewPanel>
   );
 }

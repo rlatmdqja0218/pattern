@@ -8,6 +8,7 @@ import {
 import { analyzeImage, loadImage } from '../engines/imageAnalysis';
 import { traceImageDataToPathCandidates } from '../engines/vectorTrace';
 import { useElementSize } from '../hooks/useElementSize';
+import PreviewPanel from './PreviewPanel';
 
 const HIT_OPTIONS = {
   segments: true,
@@ -18,6 +19,8 @@ const HIT_OPTIONS = {
 };
 
 const TRACE_ANALYSIS_SIZE = 640;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 6;
 
 function getStatusLabel(hitType) {
   if (hitType === 'segment') return '앵커 드래그 중';
@@ -81,6 +84,11 @@ function getSelectedMotifs(pathCandidates, selectedCandidateIds) {
     }));
 }
 
+function shouldIgnoreSpaceShortcut(event) {
+  const tagName = event.target?.tagName;
+  return ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(tagName) || event.target?.isContentEditable;
+}
+
 export default function VectorEditorCanvas({
   imageUrl,
   params = {},
@@ -92,21 +100,32 @@ export default function VectorEditorCanvas({
   const pathRef = useRef(null);
   const rasterRef = useRef(null);
   const dragTargetRef = useRef(null);
+  const spacePressedRef = useRef(false);
+  const sizeRef = useRef({ width: 0, height: 0 });
   const onPathChangeRef = useRef(onPathChange);
   const onMotifsChangeRef = useRef(onMotifsChange);
   const editingCandidateIdRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
+  const [zoomPercent, setZoomPercent] = useState(100);
   const [pathCandidates, setPathCandidates] = useState([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
   const [editingCandidateId, setEditingCandidateId] = useState(null);
+  const hasCanvasSize = width > 0 && height > 0;
   const {
     traceMode = 'auto',
     traceThreshold = 0.52,
     traceSimplify = 10,
     traceInvert = false,
     traceMaxSegments = 96,
+    curveMode = 'straight',
+    curveSmoothness = 0.45,
+    curveSimplifyTolerance = 2,
   } = params;
+
+  useEffect(() => {
+    sizeRef.current = { width, height };
+  }, [height, width]);
 
   useEffect(() => {
     onPathChangeRef.current = onPathChange;
@@ -153,21 +172,119 @@ export default function VectorEditorCanvas({
     setStatus(`후보 ${index + 1} 편집 중 · 선택 후보들이 패턴에 포함됩니다`);
   }, [applyCandidate]);
 
+  const syncZoomState = useCallback(() => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+    setZoomPercent(Math.round(scope.view.zoom * 100));
+  }, []);
+
+  const setZoomAtViewPoint = useCallback((viewPoint, nextZoom) => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+
+    const clampedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+    const oldZoom = scope.view.zoom;
+    const projectPoint = scope.view.viewToProject(viewPoint);
+    const centerToPoint = projectPoint.subtract(scope.view.center);
+    scope.view.zoom = clampedZoom;
+    scope.view.center = projectPoint.subtract(centerToPoint.multiply(oldZoom / clampedZoom));
+    scope.view.update();
+    syncZoomState();
+  }, [syncZoomState]);
+
+  const zoomBy = useCallback((factor) => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+
+    setZoomAtViewPoint(
+      new scope.Point(scope.view.viewSize.width / 2, scope.view.viewSize.height / 2),
+      scope.view.zoom * factor,
+    );
+  }, [setZoomAtViewPoint]);
+
+  const setZoomToActualSize = useCallback(() => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+
+    scope.view.zoom = 1;
+    scope.view.update();
+    syncZoomState();
+  }, [syncZoomState]);
+
+  const fitView = useCallback(() => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+
+    scope.view.zoom = 1;
+    scope.view.center = new scope.Point(
+      scope.view.viewSize.width / 2,
+      scope.view.viewSize.height / 2,
+    );
+    scope.view.update();
+    syncZoomState();
+  }, [syncZoomState]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.code !== 'Space' || shouldIgnoreSpaceShortcut(event)) return;
+      spacePressedRef.current = true;
+      event.preventDefault();
+    };
+    const handleKeyUp = (event) => {
+      if (event.code !== 'Space') return;
+      spacePressedRef.current = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      spacePressedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || width <= 0 || height <= 0) return undefined;
-    let disposed = false;
+    if (!canvas) return undefined;
 
-    canvas.width = Math.round(width);
-    canvas.height = Math.round(height);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const handleWheel = (event) => {
+      const scope = scopeRef.current;
+      if (!scope) return;
+
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const viewPoint = new scope.Point(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+      );
+      const factor = event.deltaY < 0 ? 1.12 : 0.88;
+      setZoomAtViewPoint(viewPoint, scope.view.zoom * factor);
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', handleWheel);
+    };
+  }, [setZoomAtViewPoint]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasCanvasSize) return undefined;
+    let disposed = false;
+    const { width: setupWidth, height: setupHeight } = sizeRef.current;
+
+    canvas.width = Math.round(setupWidth);
+    canvas.height = Math.round(setupHeight);
+    canvas.style.width = `${setupWidth}px`;
+    canvas.style.height = `${setupHeight}px`;
 
     const scope = new paper.PaperScope();
     scope.setup(canvas);
     scope.activate();
-    scope.view.viewSize = new scope.Size(width, height);
+    scope.view.viewSize = new scope.Size(setupWidth, setupHeight);
     scopeRef.current = scope;
+    setZoomPercent(100);
     setStatus(
       imageUrl
         ? '참고 이미지 로딩 중'
@@ -203,6 +320,13 @@ export default function VectorEditorCanvas({
 
     tool.onMouseDown = (event) => {
       scope.activate();
+      if (event.event?.button === 1 || spacePressedRef.current) {
+        event.event?.preventDefault?.();
+        dragTargetRef.current = { type: 'pan' };
+        setStatus('화면 이동 중');
+        return;
+      }
+
       const hit = scope.project.hitTest(event.point, HIT_OPTIONS);
       if (!hit || hit.item !== editablePath) {
         dragTargetRef.current = null;
@@ -219,7 +343,15 @@ export default function VectorEditorCanvas({
 
     tool.onMouseDrag = (event) => {
       const dragTarget = dragTargetRef.current;
-      if (!dragTarget?.segment) return;
+      if (!dragTarget) return;
+
+      if (dragTarget.type === 'pan') {
+        scope.view.center = scope.view.center.subtract(event.delta);
+        scope.view.update();
+        return;
+      }
+
+      if (!dragTarget.segment) return;
 
       if (dragTarget.type === 'segment') {
         dragTarget.segment.point = dragTarget.segment.point.add(event.delta);
@@ -266,12 +398,23 @@ export default function VectorEditorCanvas({
       pathRef.current = null;
       rasterRef.current = null;
     };
-  }, [imageUrl, width, height]);
+  }, [hasCanvasSize, imageUrl]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const scope = scopeRef.current;
+    if (!canvas || !scope || !hasCanvasSize) return;
+
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    scope.view.viewSize = new scope.Size(width, height);
+    scope.view.update();
+  }, [hasCanvasSize, height, width]);
 
   useEffect(() => {
     const scope = scopeRef.current;
     const editablePath = pathRef.current;
-    if (!scope || !editablePath || width <= 0 || height <= 0) return undefined;
+    if (!scope || !editablePath || !hasCanvasSize) return undefined;
 
     if (!imageUrl) {
       setPathCandidates([]);
@@ -306,6 +449,9 @@ export default function VectorEditorCanvas({
           traceSimplify,
           traceInvert,
           maxSegments: traceMaxSegments,
+          curveMode,
+          curveSmoothness,
+          curveSimplifyTolerance,
         });
         if (!candidates.length) {
           setPathCandidates([]);
@@ -328,6 +474,10 @@ export default function VectorEditorCanvas({
       disposed = true;
     };
   }, [
+    curveMode,
+    curveSimplifyTolerance,
+    curveSmoothness,
+    hasCanvasSize,
     imageUrl,
     applyCandidate,
     traceInvert,
@@ -335,16 +485,32 @@ export default function VectorEditorCanvas({
     traceMode,
     traceSimplify,
     traceThreshold,
-    width,
-    height,
   ]);
 
+  const zoomActions = (
+    <div className="vector-editor__zoom-controls" aria-label="벡터 편집 화면 조절">
+      <button type="button" onClick={() => zoomBy(1.2)} title="확대">
+        +
+      </button>
+      <button type="button" onClick={() => zoomBy(0.8)} title="축소">
+        -
+      </button>
+      <button type="button" onClick={fitView} title="화면 맞춤">
+        맞춤
+      </button>
+      <button type="button" onClick={setZoomToActualSize} title="100%">
+        100%
+      </button>
+    </div>
+  );
+
   return (
-    <section className="preview-panel vector-editor">
-      <header className="preview-panel__header">
-        <h2>벡터 편집 레이어</h2>
-        <span className="preview-panel__meta">{status}</span>
-      </header>
+    <PreviewPanel
+      title="벡터 편집 레이어"
+      meta={`${status} · ${zoomPercent}%`}
+      className="vector-editor"
+      actions={zoomActions}
+    >
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
           {pathCandidates.map((candidate, index) => {
@@ -376,6 +542,6 @@ export default function VectorEditorCanvas({
       <div className="preview-panel__body vector-editor__body" ref={containerRef}>
         <canvas ref={canvasRef} className="vector-editor__canvas" />
       </div>
-    </section>
+    </PreviewPanel>
   );
 }

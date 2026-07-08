@@ -1,4 +1,5 @@
 import ImageTracer from 'imagetracerjs';
+import paper from 'paper';
 
 export const DEFAULT_TRACE_OPTIONS = {
   traceMode: 'auto',
@@ -8,6 +9,9 @@ export const DEFAULT_TRACE_OPTIONS = {
   maxSegments: 96,
   maxCandidates: 8,
   minCandidateArea: 24,
+  curveMode: 'straight',
+  curveSmoothness: 0.45,
+  curveSimplifyTolerance: 2,
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -140,16 +144,68 @@ function decimatePoints(points, maxSegments) {
   return Array.from({ length: maxSegments }, (_, index) => points[Math.floor(index * step)]);
 }
 
-function pointsToEditablePathData(points) {
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function pointToObject(point) {
+  return {
+    x: Number(point.x.toFixed(2)),
+    y: Number(point.y.toFixed(2)),
+  };
+}
+
+function smoothPointsToEditablePathData(points, options) {
+  if (points.length < 3 || typeof document === 'undefined') return null;
+
+  const scope = new paper.PaperScope();
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  scope.setup(canvas);
+
+  const path = new scope.Path({ closed: true, insert: false });
+  points.forEach((point) => {
+    path.add(new scope.Point(point.x, point.y));
+  });
+  path.closed = true;
+
+  const simplifyTolerance = Math.max(0, options.curveSimplifyTolerance);
+  if (simplifyTolerance > 0) {
+    path.simplify(simplifyTolerance);
+  }
+  if (path.segments.length < 3) {
+    path.remove();
+    scope.project.remove();
+    return pointsToEditablePathData(points, { ...options, curveMode: 'straight' });
+  }
+  path.smooth({ type: 'continuous' });
+
+  const smoothness = clamp(options.curveSmoothness, 0, 1);
+  const data = {
+    closed: true,
+    segments: path.segments.map((segment) => ({
+      point: pointToObject(segment.point),
+      handleIn: pointToObject(segment.handleIn.multiply(smoothness)),
+      handleOut: pointToObject(segment.handleOut.multiply(smoothness)),
+    })),
+  };
+
+  path.remove();
+  scope.project.remove();
+  return data;
+}
+
+function pointsToEditablePathData(points, options = {}) {
   if (points.length < 3) return null;
+  if (options.curveMode === 'smooth') {
+    return smoothPointsToEditablePathData(points, options);
+  }
 
   return {
     closed: true,
     segments: points.map((point) => ({
-      point: {
-        x: Number(point.x.toFixed(2)),
-        y: Number(point.y.toFixed(2)),
-      },
+      point: pointToObject(point),
       handleIn: { x: 0, y: 0 },
       handleOut: { x: 0, y: 0 },
     })),
@@ -212,7 +268,7 @@ export function simplifyEditablePathData(pathData, options = {}) {
     Math.max(8, traceOptions.maxSegments),
   );
 
-  return pointsToEditablePathData(simplifiedPoints);
+  return pointsToEditablePathData(simplifiedPoints, traceOptions);
 }
 
 export function traceImageDataToPathCandidates(imageData, options = {}) {
@@ -224,7 +280,10 @@ export function traceImageDataToPathCandidates(imageData, options = {}) {
   return getForegroundPathSamples(svg, traceOptions)
     .slice(0, Math.max(1, traceOptions.maxCandidates))
     .map((tracedPath, index) => {
-      const pathData = pointsToEditablePathData(tracedPath.points);
+      const pathData = pointsToEditablePathData(tracedPath.points, {
+        ...traceOptions,
+        curveMode: 'straight',
+      });
       const editablePath = simplifyEditablePathData(pathData, traceOptions);
       if (!editablePath) return null;
 
