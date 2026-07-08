@@ -57,7 +57,9 @@ export default function PatternCanvas({ imageUrl, params }) {
       <header className="preview-panel__header">
         <h2>2D 패턴 프리뷰</h2>
         <span className="preview-panel__meta">
-          {params.mode} · 간격 {params.dotSpacing}px · 각도 {params.angle}°
+          {params.mode === 'halftone'
+            ? `halftone · 간격 ${params.dotSpacing}px · 각도 ${params.angle}°`
+            : `${params.mode} · 배율 ${params.tileScale} · 간격 ${params.tileSpacing}px`}
         </span>
       </header>
       <div className="preview-panel__body" ref={containerRef}>

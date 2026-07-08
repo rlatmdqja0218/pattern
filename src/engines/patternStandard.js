@@ -1,26 +1,45 @@
 /**
- * Standard(격자 반복) 패턴 엔진 — 스텁
+ * Standard(격자 반복) 패턴 엔진
  *
- * 다음 단계에서 구현 예정: 원본 이미지를 dotSpacing/scale 파라미터에 따라
- * 격자(Grid)로 반복 배치하는 타일링 렌더러.
- * 시그니처는 renderHalftone과 동일하게 유지해 mode 레지스트리에서
- * 교체 가능하도록 한다.
+ * 원본 이미지를 tileScale 배율로 축소/확대한 타일을
+ * tileSpacing 간격의 격자(Grid)로 캔버스 전체에 반복 배치한다.
+ */
+
+import { getSourceCanvas } from './sourceCanvas';
+
+const MIN_TILE_SIZE = 8;
+
+/**
+ * @param {HTMLCanvasElement} canvas 출력 대상 캔버스
+ * @param {ImageData} imageData 분석용 픽셀 데이터
+ * @param {object} params
+ * @param {number} params.tileScale   타일 배율
+ * @param {number} params.tileSpacing 타일 간 여백(px)
+ * @param {string} params.backgroundColor 배경 색상
  */
 export function renderStandard(canvas, imageData, params) {
-  if (!canvas) return;
+  if (!canvas || !imageData) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
+  const source = getSourceCanvas(imageData);
+  if (!source) return;
+
+  const { width: cw, height: ch } = canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = params.backgroundColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = params.foregroundColor;
-  ctx.font = '16px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(
-    'Standard(격자 반복) 모드는 다음 단계에서 구현됩니다.',
-    canvas.width / 2,
-    canvas.height / 2,
-  );
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const tileWidth = Math.max(MIN_TILE_SIZE, imageData.width * params.tileScale);
+  const tileHeight = Math.max(MIN_TILE_SIZE, imageData.height * params.tileScale);
+  const strideX = Math.max(MIN_TILE_SIZE, tileWidth + params.tileSpacing);
+  const strideY = Math.max(MIN_TILE_SIZE, tileHeight + params.tileSpacing);
+
+  for (let y = -strideY; y < ch + strideY; y += strideY) {
+    for (let x = -strideX; x < cw + strideX; x += strideX) {
+      ctx.drawImage(source, x, y, tileWidth, tileHeight);
+    }
+  }
 }

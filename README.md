@@ -14,7 +14,7 @@
 | --- | --- |
 | 프레임워크 | React 19 + Vite |
 | 사이드바 컨트롤 패널 | [Leva](https://github.com/pmndrs/leva) |
-| 2D 캔버스 프리뷰 | [Konva](https://konvajs.org/) + react-konva |
+| 2D 캔버스 프리뷰 | HTML5 Canvas API + OffscreenCanvas |
 | 3D 목업 뷰어 | [Three.js](https://threejs.org/) + @react-three/fiber |
 
 ## 실행 방법
@@ -33,11 +33,15 @@ npm run build   # 프로덕션 빌드
 - **Halftone(망점) 패턴 엔진** (`engines/patternHalftone.js`)
   - 회전 가능한 샘플링 그리드 순회 → 명도를 점 반지름으로 매핑 → 점 데이터 배열 생성 → 캔버스 렌더링
   - 순수 함수 구조 (추후 Web Worker 분리 용이)
+- **Standard(격자 반복) 패턴 엔진** (`engines/patternStandard.js`)
+  - 타일 배율/간격 조절 가능한 2중 루프 그리드 타일링
+- **Mirror(심리스 미러링) 패턴 엔진** (`engines/patternMirror.js`)
+  - 원본/좌우반전/상하반전/상하좌우반전 2x2 메타 타일로 이음새 없는 반복
 - **사이드바 컨트롤 패널** (Leva)
-  - 이미지 업로드, 패턴 모드(halftone / standard / mirror),
-    점 간격 · 최소/최대 반지름 · 명도 기준값 · 명도 반전 · 그리드 각도 ·
-    점/배경 색상 · 원본 색상 사용
-  - 값 변경 시 2D 캔버스 즉시 재렌더링
+  - 이미지 업로드, 패턴 모드(halftone / standard / mirror)
+  - Halftone: 점 간격 · 최소/최대 반지름 · 명도 기준값 · 명도 반전 · 그리드 각도 · 점 색상 · 원본 색상 사용
+  - Standard/Mirror: 타일 배율 · 타일 간격
+  - mode에 따라 관련 컨트롤만 노출, 값 변경 시 2D 캔버스 즉시 재렌더링
 - **3D 목업 프리뷰** (@react-three/fiber) — 회전 박스 플레이스홀더 (다음 단계에서 패턴 텍스처 연결)
 
 ## 프로젝트 구조
@@ -49,11 +53,12 @@ src/
 │   ├── PatternCanvas.jsx      # 2D 패턴 캔버스 — canvas ref 관리 + 재렌더링 타이밍만 담당
 │   └── MockupViewer.jsx       # 3D Mockup 프리뷰 (r3f) — 임시 박스
 ├── engines/                   # 알고리즘 (컴포넌트와 분리, 순수 함수 지향)
-│   ├── index.js               # mode → 렌더러 레지스트리
+│   ├── index.js               # mode → 렌더러 레지스트리 (단일 렌더링 진입점)
 │   ├── imageAnalysis.js       # 이미지 → ImageData, 명도/평균색 계산
+│   ├── sourceCanvas.js        # ImageData → 비트맵 캔버스 (WeakMap 캐시)
 │   ├── patternHalftone.js     # 망점: 그리드 샘플링 → 반지름 매핑 → 렌더링
-│   ├── patternStandard.js     # 격자 반복 (스텁, 다음 단계)
-│   └── patternMirror.js       # 심리스 미러링 (스텁, 다음 단계)
+│   ├── patternStandard.js     # 격자 반복 타일링
+│   └── patternMirror.js       # 2x2 메타 타일 심리스 미러링
 ├── state/
 │   └── patternDefaults.js     # Leva 컨트롤 스키마 + 파라미터 기본값
 └── hooks/
@@ -62,7 +67,8 @@ src/
 
 ## 다음 단계 (로드맵)
 
-1. Standard(격자 반복) / Mirror(심리스 메타 타일) 렌더러 구현 — 레지스트리에 등록만 하면 연결됨
-2. 3D 목업에 PatternCanvas 결과를 `THREE.CanvasTexture`로 래핑
+1. 2D 렌더 결과(PatternCanvas)를 `THREE.CanvasTexture`로 3D 목업 표면에 직접 연결
+2. 벽돌/육각/회전 등 추가 타일링 방식
 3. 픽셀 순회 연산 Web Worker 분리 (엔진이 이미 DOM 독립적이라 이전 용이)
-4. OffscreenCanvas 기반 고해상도 익스포트 파이프라인
+4. 3D 목업을 실제 가전제품 형태 모델 + 심리스 텍스처 래핑으로 교체
+5. OffscreenCanvas 기반 고해상도 익스포트 파이프라인
