@@ -75,7 +75,7 @@ export default function PatternCanvas({
     params.mode === 'halftone'
       ? `halftone · 간격 ${params.dotSpacing}px · 각도 ${params.angle}°`
       : params.mode === 'vector'
-        ? `vector · 크기 ${params.motifScale} · ${params.motifSpacingX}/${params.motifSpacingY}px`
+        ? `vector · ${params.motifLayoutMode} · ${params.patternGrammar} · 크기 ${params.motifScale}`
         : `${params.mode} · 배율 ${params.tileScale} · 간격 ${params.tileSpacing}px`;
 
   return (

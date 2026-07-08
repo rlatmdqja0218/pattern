@@ -93,6 +93,59 @@ export const patternControlSchema = {
     value: 1, min: 0.05, max: 1, step: 0.05,
     label: '모티프 투명도', render: isVector,
   },
+  motifLayoutMode: {
+    value: 'preserveLayout',
+    options: ['preserveLayout', 'isolated'],
+    label: '모티프 배치 기준',
+    render: isVector,
+  },
+  patternGrammar: {
+    value: 'grid',
+    options: ['grid', 'stagger', 'diagonalFlow', 'denseFade', 'randomScatter'],
+    label: '패턴 문법',
+    render: isVector,
+  },
+  rowOffset: {
+    value: 0.5, min: 0, max: 1, step: 0.05,
+    label: '행 오프셋',
+    render: isVector,
+  },
+  flowAngle: {
+    value: -18, min: -180, max: 180, step: 1,
+    label: '흐름 각도',
+    render: isVector,
+  },
+  flowStrength: {
+    value: 40, min: 0, max: 200, step: 1,
+    label: '흐름 강도',
+    render: isVector,
+  },
+  densityDirection: {
+    value: 'leftToRight',
+    options: ['leftToRight', 'rightToLeft', 'topToBottom', 'bottomToTop', 'centerOut'],
+    label: '밀도 방향',
+    render: isVector,
+  },
+  densityStrength: {
+    value: 0.35, min: 0, max: 1, step: 0.05,
+    label: '밀도 강도',
+    render: isVector,
+  },
+  randomJitter: {
+    value: 0, min: 0, max: 80, step: 1,
+    label: '랜덤 위치 변화',
+    render: isVector,
+  },
+  rotationJitter: {
+    value: 0, min: 0, max: 45, step: 1,
+    label: '랜덤 회전 변화',
+    render: isVector,
+  },
+  scaleJitter: {
+    value: 0, min: 0, max: 0.8, step: 0.05,
+    label: '랜덤 크기 변화',
+    render: isVector,
+  },
   traceMode: {
     value: 'auto',
     options: ['auto', 'manual'],

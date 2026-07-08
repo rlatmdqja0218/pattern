@@ -6,6 +6,11 @@ import {
   serializePaperPath,
 } from '../engines/editablePath';
 import { analyzeImage, loadImage } from '../engines/imageAnalysis';
+import {
+  clonePathData,
+  fitPathDataToView,
+  unfitPathDataFromView,
+} from '../engines/pathTransform';
 import { traceImageDataToPathCandidates } from '../engines/vectorTrace';
 import { useElementSize } from '../hooks/useElementSize';
 import PreviewPanel from './PreviewPanel';
@@ -40,29 +45,32 @@ function fitRasterToView(scope, raster) {
   raster.position = scope.view.center;
 }
 
-function fitPathDataToView(pathData, imageSize, scope) {
+function getViewSize(scope) {
   const { width, height } = scope.view.size;
-  const scale = Math.min(width / imageSize.width, height / imageSize.height);
-  const offsetX = (width - imageSize.width * scale) / 2;
-  const offsetY = (height - imageSize.height * scale) / 2;
+  return { width, height };
+}
 
-  return {
-    ...pathData,
-    segments: pathData.segments.map((segment) => ({
-      point: {
-        x: offsetX + segment.point.x * scale,
-        y: offsetY + segment.point.y * scale,
-      },
-      handleIn: {
-        x: segment.handleIn.x * scale,
-        y: segment.handleIn.y * scale,
-      },
-      handleOut: {
-        x: segment.handleOut.x * scale,
-        y: segment.handleOut.y * scale,
-      },
-    })),
-  };
+function getCandidateImageSize(candidate) {
+  const trace = candidate?.editablePath?.trace;
+  if (!trace?.width || !trace?.height) return null;
+  return { width: trace.width, height: trace.height };
+}
+
+function getViewPathData(candidate, scope) {
+  const imageSize = getCandidateImageSize(candidate);
+  const pathData = clonePathData(candidate?.editablePath);
+  if (!imageSize) return pathData;
+  return fitPathDataToView(pathData, imageSize, getViewSize(scope));
+}
+
+function getOriginalPathData(viewPathData, candidate, scope) {
+  const imageSize = getCandidateImageSize(candidate);
+  const trace = candidate?.editablePath?.trace;
+  const pathData = imageSize
+    ? unfitPathDataFromView(viewPathData, imageSize, getViewSize(scope))
+    : clonePathData(viewPathData);
+
+  return trace ? { ...pathData, trace: { ...trace } } : pathData;
 }
 
 function getCandidateLabel(candidate, index) {
@@ -80,7 +88,7 @@ function getSelectedMotifs(pathCandidates, selectedCandidateIds) {
       id,
       area,
       length,
-      editablePath,
+      editablePath: clonePathData(editablePath),
     }));
 }
 
@@ -105,6 +113,7 @@ export default function VectorEditorCanvas({
   const onPathChangeRef = useRef(onPathChange);
   const onMotifsChangeRef = useRef(onMotifsChange);
   const editingCandidateIdRef = useRef(null);
+  const pathCandidatesRef = useRef([]);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
   const [zoomPercent, setZoomPercent] = useState(100);
@@ -140,6 +149,10 @@ export default function VectorEditorCanvas({
   }, [editingCandidateId]);
 
   useEffect(() => {
+    pathCandidatesRef.current = pathCandidates;
+  }, [pathCandidates]);
+
+  useEffect(() => {
     onMotifsChangeRef.current?.(
       getSelectedMotifs(pathCandidates, selectedCandidateIds),
     );
@@ -148,29 +161,31 @@ export default function VectorEditorCanvas({
   const applyCandidate = useCallback((candidate) => {
     const scope = scopeRef.current;
     const editablePath = pathRef.current;
-    const imageSize = candidate?.editablePath?.trace;
     if (!scope || !editablePath || !candidate?.editablePath?.segments?.length) return;
 
-    const pathData = imageSize
-      ? fitPathDataToView(candidate.editablePath, imageSize, scope)
-      : candidate.editablePath;
+    const pathData = getViewPathData(candidate, scope);
     applySerializedPath(editablePath, pathData);
     editablePath.selected = true;
     editablePath.fullySelected = true;
     scope.view.update();
     setEditingCandidateId(candidate.id);
-    onPathChangeRef.current?.(serializePaperPath(editablePath));
+    onPathChangeRef.current?.(clonePathData(candidate.editablePath));
   }, []);
 
-  const handleCandidateClick = useCallback((candidate, index) => {
+  const handleCandidateEdit = useCallback((candidate, index) => {
+    applyCandidate(candidate);
+    setStatus(`후보 ${index + 1} 편집 중`);
+  }, [applyCandidate]);
+
+  const handleCandidateToggle = useCallback((event, candidate, index) => {
+    event.stopPropagation();
     setSelectedCandidateIds((currentIds) => (
       currentIds.includes(candidate.id)
         ? currentIds.filter((candidateId) => candidateId !== candidate.id)
         : [...currentIds, candidate.id]
     ));
-    applyCandidate(candidate);
-    setStatus(`후보 ${index + 1} 편집 중 · 선택 후보들이 패턴에 포함됩니다`);
-  }, [applyCandidate]);
+    setStatus(`후보 ${index + 1} 패턴 포함 상태 변경`);
+  }, []);
 
   const syncZoomState = useCallback(() => {
     const scope = scopeRef.current;
@@ -369,13 +384,21 @@ export default function VectorEditorCanvas({
       editablePath.fullySelected = true;
       scope.view.update();
       const serializedPath = serializePaperPath(editablePath);
-      onPathChangeRef.current?.(serializedPath);
 
       const editingCandidateId = editingCandidateIdRef.current;
-      if (editingCandidateId) {
+      const editingCandidate = pathCandidatesRef.current.find(
+        (candidate) => candidate.id === editingCandidateId,
+      );
+      const nextPathData = editingCandidate
+        ? getOriginalPathData(serializedPath, editingCandidate, scope)
+        : serializedPath;
+
+      onPathChangeRef.current?.(nextPathData);
+
+      if (editingCandidateId && editingCandidate) {
         setPathCandidates((currentCandidates) => currentCandidates.map((candidate) => (
           candidate.id === editingCandidateId
-            ? { ...candidate, editablePath: serializedPath }
+            ? { ...candidate, editablePath: clonePathData(nextPathData) }
             : candidate
         )));
       }
@@ -408,8 +431,17 @@ export default function VectorEditorCanvas({
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     scope.view.viewSize = new scope.Size(width, height);
+    if (rasterRef.current) {
+      fitRasterToView(scope, rasterRef.current);
+    }
+    const editingCandidate = pathCandidatesRef.current.find(
+      (candidate) => candidate.id === editingCandidateIdRef.current,
+    );
+    if (editingCandidate) {
+      applyCandidate(editingCandidate);
+    }
     scope.view.update();
-  }, [hasCanvasSize, height, width]);
+  }, [applyCandidate, hasCanvasSize, height, width]);
 
   useEffect(() => {
     const scope = scopeRef.current;
@@ -523,18 +555,47 @@ export default function VectorEditorCanvas({
             ].filter(Boolean).join(' ');
 
             return (
-              <button
-                type="button"
+              <div
                 key={candidate.id}
+                role="button"
+                tabIndex={0}
                 className={className}
-                aria-pressed={isSelected}
+                aria-label={`${getCandidateLabel(candidate, index)} 편집`}
                 title={`${isSelected ? '패턴 포함' : '패턴 제외'} · ${
-                  isEditing ? '현재 편집 중' : '클릭하면 편집 대상'
+                  isEditing ? '현재 편집 중' : '행을 클릭하면 편집 대상'
                 }`}
-                onClick={() => handleCandidateClick(candidate, index)}
+                onClick={() => handleCandidateEdit(candidate, index)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  handleCandidateEdit(candidate, index);
+                }}
               >
-                {getCandidateLabel(candidate, index)}
-              </button>
+                <label
+                  className="vector-editor__candidate-toggle"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(event) => handleCandidateToggle(event, candidate, index)}
+                  />
+                  <span>패턴 포함</span>
+                </label>
+                <span className="vector-editor__candidate-label">
+                  {getCandidateLabel(candidate, index)}
+                </span>
+                <button
+                  type="button"
+                  className="vector-editor__candidate-edit"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleCandidateEdit(candidate, index);
+                  }}
+                >
+                  편집
+                </button>
+              </div>
             );
           })}
         </div>

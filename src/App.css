@@ -226,21 +226,20 @@
 }
 
 .vector-editor__candidate {
-  flex: 0 0 auto;
-  min-width: 72px;
-  max-width: 180px;
-  height: 26px;
-  padding: 0 8px;
-  overflow: hidden;
+  display: grid;
+  flex: 0 0 276px;
+  grid-template-columns: auto minmax(72px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 34px;
+  padding: 4px 6px;
   border: 1px solid #303842;
   border-radius: 6px;
   background: #1d232a;
   color: #98a2b3;
   font: inherit;
   font-size: 11px;
-  line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -257,6 +256,47 @@
 
 .vector-editor__candidate.is-editing {
   box-shadow: inset 0 0 0 1px #7bd4ff;
+}
+
+.vector-editor__candidate-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vector-editor__candidate-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #2f9cff;
+}
+
+.vector-editor__candidate-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-editor__candidate-edit {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid #3a4350;
+  border-radius: 5px;
+  background: #11161b;
+  color: #c0cad7;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.vector-editor__candidate-edit:hover {
+  color: #ffffff;
+  border-color: #2f9cff;
 }
 
 .vector-editor__canvas {
