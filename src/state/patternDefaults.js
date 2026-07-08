@@ -163,6 +163,23 @@ export const patternControlSchema = {
     label: '패턴 반전',
     render: isVector,
   },
+  motifAssemblyMode: {
+    value: 'fragment',
+    options: ['reconstruct', 'fragment'],
+    label: '모티프 조립 방식',
+    render: isVector,
+  },
+  preserveRoleScale: {
+    value: false,
+    label: '관계 유지 시 역할별 크기 적용',
+    render: isVector,
+  },
+  groupScaleMode: {
+    value: 'wholeGroup',
+    options: ['wholeGroup', 'individualParts'],
+    label: '그룹 크기 기준',
+    render: isVector,
+  },
   motifLayoutMode: {
     value: 'preserveLayout',
     options: ['preserveLayout', 'isolated'],

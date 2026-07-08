@@ -2,6 +2,9 @@ export const PATTERN_PRESETS = {
   t1SpeedFlow: {
     patternGrammar: 'diagonalFlow',
     patternStyle: 'outline',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'preserveLayout',
     motifScale: 0.42,
     motifSpacingX: 48,
@@ -28,6 +31,9 @@ export const PATTERN_PRESETS = {
   microTech: {
     patternGrammar: 'stagger',
     patternStyle: 'ghost',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'preserveLayout',
     motifScale: 0.22,
     motifSpacingX: 22,
@@ -52,6 +58,9 @@ export const PATTERN_PRESETS = {
   luxuryEngrave: {
     patternGrammar: 'denseFade',
     patternStyle: 'engrave',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'preserveLayout',
     motifScale: 0.58,
     motifSpacingX: 78,
@@ -75,6 +84,9 @@ export const PATTERN_PRESETS = {
   ghostMonogram: {
     patternGrammar: 'stagger',
     patternStyle: 'ghost',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'preserveLayout',
     motifScale: 0.62,
     motifSpacingX: 112,
@@ -96,6 +108,9 @@ export const PATTERN_PRESETS = {
   diagonalSlash: {
     patternGrammar: 'diagonalFlow',
     patternStyle: 'hybrid',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'isolated',
     motifScale: 0.34,
     motifSpacingX: 42,
@@ -122,6 +137,9 @@ export const PATTERN_PRESETS = {
   denseEdgeFade: {
     patternGrammar: 'denseFade',
     patternStyle: 'ghost',
+    motifAssemblyMode: 'fragment',
+    preserveRoleScale: false,
+    groupScaleMode: 'wholeGroup',
     motifLayoutMode: 'preserveLayout',
     motifScale: 0.46,
     motifSpacingX: 50,

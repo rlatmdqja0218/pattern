@@ -238,8 +238,8 @@ function getRoleStyle(role, params) {
   };
 }
 
-function getPatternTreatment(patternStyle, editablePath) {
-  const style = patternStyle ?? 'hybrid';
+function getPatternTreatment(params, editablePath) {
+  const style = params.patternStyle ?? 'hybrid';
   const canFill = Boolean(editablePath.closed);
 
   if (style === 'outline') {
@@ -253,10 +253,11 @@ function getPatternTreatment(patternStyle, editablePath) {
     };
   }
   if (style === 'solid') {
+    const isFragment = (params.motifAssemblyMode ?? 'fragment') === 'fragment';
     return {
       shouldFill: canFill,
       shouldStroke: !canFill,
-      fillAlpha: 1,
+      fillAlpha: isFragment ? 0.62 : 1,
       strokeAlpha: canFill ? 0 : 1,
       strokeWidthMultiplier: 0.6,
       alphaMultiplier: 1,
@@ -413,7 +414,9 @@ function drawMotif(
   const useIndexVariation = options.useIndexVariation ?? true;
   const pathBounds = options.pathBounds ?? bounds;
   const roleStyle = getRoleStyle(role, params);
-  const treatment = getPatternTreatment(params.patternStyle, editablePath);
+  const pathScale = options.applyRoleScale === false ? 1 : roleStyle.scale;
+  const scaleOriginBounds = options.scaleOriginBounds ?? pathBounds;
+  const treatment = getPatternTreatment(params, editablePath);
   const palette = getPalette(params);
   const isEngrave = (params.patternStyle ?? 'hybrid') === 'engrave';
   const motifStrokeColor = isEngrave ? getEngraveColor(palette.background) : palette.stroke;
@@ -433,7 +436,7 @@ function drawMotif(
   );
   ctx.rotate(rotation);
   ctx.scale(scale, scale);
-  traceEditablePath(ctx, editablePath, bounds, pathBounds, roleStyle.scale);
+  traceEditablePath(ctx, editablePath, bounds, scaleOriginBounds, pathScale);
 
   const baseOpacity = clamp(
     (params.motifOpacity ?? 1)
@@ -464,7 +467,19 @@ function drawMotif(
   ctx.restore();
 }
 
-function drawMotifGroup(ctx, motifEntries, groupBounds, x, y, params, cellTransform) {
+function drawMotifGroup(
+  ctx,
+  motifEntries,
+  groupBounds,
+  x,
+  y,
+  params,
+  cellTransform,
+  groupOptions,
+) {
+  const applyRoleScale = groupOptions.preserveRoleScale;
+  const scaleWholeGroup = groupOptions.groupScaleMode === 'wholeGroup';
+
   motifEntries.forEach(({
     path, bounds, role, index,
   }) => {
@@ -480,6 +495,8 @@ function drawMotifGroup(ctx, motifEntries, groupBounds, x, y, params, cellTransf
       cellTransform,
       {
         pathBounds: bounds,
+        applyRoleScale,
+        scaleOriginBounds: scaleWholeGroup ? groupBounds : bounds,
         useIndexVariation: false,
       },
     );
@@ -507,11 +524,17 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
   if (!motifEntries.length) return;
 
   const scale = Math.max(0.01, params.motifScale);
-  const maxRoleScale = Math.max(
-    ...motifEntries.map(({ role }) => getRoleStyle(role, params).scale),
-  );
-  const preserveLayout = (params.motifLayoutMode ?? 'preserveLayout') === 'preserveLayout'
-    && hasSelectedMotifPaths(selectedMotifs);
+  const assemblyMode = params.motifAssemblyMode ?? 'fragment';
+  const preserveLayout = hasSelectedMotifPaths(selectedMotifs)
+    && (
+      assemblyMode === 'reconstruct'
+      || (params.motifLayoutMode ?? 'preserveLayout') === 'preserveLayout'
+    );
+  const preserveRoleScale = preserveLayout && params.preserveRoleScale === true;
+  const groupScaleMode = params.groupScaleMode ?? 'wholeGroup';
+  const maxRoleScale = preserveRoleScale
+    ? Math.max(...motifEntries.map(({ role }) => getRoleStyle(role, params).scale))
+    : 1;
   const groupBounds = preserveLayout ? getCombinedBounds(motifEntries) : null;
   const motifWidth = preserveLayout
     ? groupBounds.width * scale * maxRoleScale
@@ -558,6 +581,7 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
           y + strideY / 2,
           params,
           cellTransform,
+          { preserveRoleScale, groupScaleMode },
         );
         continue;
       }
