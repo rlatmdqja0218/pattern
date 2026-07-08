@@ -135,6 +135,26 @@ export const patternControlSchema = {
     label: '곡선 단순화',
     render: isVector,
   },
+  mockupPatternScaleX: {
+    value: 1, min: 0.2, max: 6, step: 0.05,
+    label: '목업 패턴 X 배율',
+  },
+  mockupPatternScaleY: {
+    value: 1, min: 0.2, max: 6, step: 0.05,
+    label: '목업 패턴 Y 배율',
+  },
+  mockupPatternOffsetX: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: '목업 패턴 X 이동',
+  },
+  mockupPatternOffsetY: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: '목업 패턴 Y 이동',
+  },
+  mockupPatternRotation: {
+    value: 0, min: -3.14, max: 3.14, step: 0.01,
+    label: '목업 패턴 회전(rad)',
+  },
 
   // — 공통 —
   backgroundColor: { value: '#f5f1e8', label: '배경 색상' },

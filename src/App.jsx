@@ -79,7 +79,11 @@ export default function App() {
           </Panel>
           <PanelResizeHandle className="app__resize-handle" />
           <Panel id="mockup" defaultSize="25%" minSize="12%" className="app__panel">
-            <MockupViewer patternCanvas={patternCanvas} patternVersion={patternVersion} />
+            <MockupViewer
+              patternCanvas={patternCanvas}
+              patternVersion={patternVersion}
+              params={params}
+            />
           </Panel>
         </PanelGroup>
       </main>
