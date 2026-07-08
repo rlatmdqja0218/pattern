@@ -7,13 +7,14 @@
  */
 
 const isHalftone = (get) => get('mode') === 'halftone';
-const isTiling = (get) => get('mode') !== 'halftone';
+const isTiling = (get) => ['standard', 'mirror'].includes(get('mode'));
+const isVector = (get) => get('mode') === 'vector';
 
 /** Leva useControls에 그대로 전달하는 스키마 */
 export const patternControlSchema = {
   mode: {
     value: 'halftone',
-    options: ['halftone', 'standard', 'mirror'],
+    options: ['halftone', 'standard', 'mirror', 'vector'],
     label: '패턴 모드',
   },
 
@@ -50,6 +51,47 @@ export const patternControlSchema = {
   tileSpacing: {
     value: 0, min: 0, max: 200, step: 1,
     label: '타일 간격', render: isTiling,
+  },
+
+  // — Vector(편집 경로 모티프) 전용 —
+  motifScale: {
+    value: 0.55, min: 0.05, max: 3, step: 0.05,
+    label: '모티프 크기', render: isVector,
+  },
+  motifSpacingX: {
+    value: 56, min: 0, max: 300, step: 1,
+    label: '모티프 가로 간격', render: isVector,
+  },
+  motifSpacingY: {
+    value: 48, min: 0, max: 300, step: 1,
+    label: '모티프 세로 간격', render: isVector,
+  },
+  motifRotation: {
+    value: 0, min: -180, max: 180, step: 1,
+    label: '모티프 회전', render: isVector,
+  },
+  motifStrokeWidth: {
+    value: 2, min: 0.25, max: 20, step: 0.25,
+    label: '모티프 선 두께', render: isVector,
+  },
+  motifStrokeColor: {
+    value: '#1f8fff',
+    label: '모티프 선 색상',
+    render: isVector,
+  },
+  motifFillEnabled: {
+    value: false,
+    label: '모티프 내부 채움',
+    render: isVector,
+  },
+  motifFillColor: {
+    value: '#1f8fff',
+    label: '모티프 내부 색상',
+    render: isVector,
+  },
+  motifOpacity: {
+    value: 1, min: 0.05, max: 1, step: 0.05,
+    label: '모티프 투명도', render: isVector,
   },
 
   // — 공통 —

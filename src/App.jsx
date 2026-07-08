@@ -8,7 +8,7 @@ import './App.css';
 
 export default function App() {
   const store = useCreateStore();
-  const [, setEditablePath] = useState(null);
+  const [editablePath, setEditablePath] = useState(null);
 
   // Leva 사이드바 컨트롤 — 이 값들이 앱의 단일 상태 소스(state)가 된다.
   // image: 업로드 시 object URL 문자열이 상태로 저장된다.
@@ -33,7 +33,7 @@ export default function App() {
         <LevaPanel store={store} fill flat titleBar={false} />
       </aside>
       <main className="app__previews">
-        <PatternCanvas imageUrl={image} params={params} />
+        <PatternCanvas imageUrl={image} params={params} editablePath={editablePath} />
         <VectorEditorCanvas imageUrl={image} onPathChange={handlePathChange} />
         <MockupViewer imageUrl={image} />
       </main>
