@@ -21,10 +21,22 @@ function getStatusLabel(hitType) {
   return '앵커 또는 핸들을 직접 드래그하세요';
 }
 
-export default function VectorEditorCanvas({ onPathChange }) {
+function fitRasterToView(scope, raster) {
+  const { width, height } = scope.view.size;
+  const rasterWidth = raster.width || raster.bounds.width;
+  const rasterHeight = raster.height || raster.bounds.height;
+  if (!rasterWidth || !rasterHeight) return;
+
+  const scale = Math.min(width / rasterWidth, height / rasterHeight);
+  raster.scaling = new scope.Point(scale, scale);
+  raster.position = scope.view.center;
+}
+
+export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
   const canvasRef = useRef(null);
   const scopeRef = useRef(null);
   const pathRef = useRef(null);
+  const rasterRef = useRef(null);
   const dragTargetRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
@@ -32,6 +44,7 @@ export default function VectorEditorCanvas({ onPathChange }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || width <= 0 || height <= 0) return undefined;
+    let disposed = false;
 
     canvas.width = Math.round(width);
     canvas.height = Math.round(height);
@@ -43,7 +56,34 @@ export default function VectorEditorCanvas({ onPathChange }) {
     scope.activate();
     scope.view.viewSize = new scope.Size(width, height);
     scopeRef.current = scope;
+    setStatus(
+      imageUrl
+        ? '참고 이미지 로딩 중'
+        : '앵커 또는 핸들을 직접 드래그하세요',
+    );
 
+    const referenceLayer = new scope.Layer({ name: 'reference' });
+    referenceLayer.activate();
+    referenceLayer.locked = true;
+
+    if (imageUrl) {
+      const raster = new scope.Raster({
+        source: imageUrl,
+        crossOrigin: 'Anonymous',
+      });
+      rasterRef.current = raster;
+      raster.locked = true;
+      raster.opacity = 0.42;
+      raster.onLoad = () => {
+        if (disposed) return;
+        fitRasterToView(scope, raster);
+        setStatus('참고 이미지 위에서 앵커 또는 핸들을 드래그하세요');
+        scope.view.update();
+      };
+    }
+
+    const editLayer = new scope.Layer({ name: 'edit' });
+    editLayer.activate();
     const editablePath = createDefaultEditablePath(scope);
     pathRef.current = editablePath;
     onPathChange?.(serializePaperPath(editablePath));
@@ -96,13 +136,16 @@ export default function VectorEditorCanvas({ onPathChange }) {
     };
 
     return () => {
+      disposed = true;
       dragTargetRef.current = null;
       tool.remove();
+      rasterRef.current?.remove();
       scope.project.remove();
       scopeRef.current = null;
       pathRef.current = null;
+      rasterRef.current = null;
     };
-  }, [width, height, onPathChange]);
+  }, [imageUrl, width, height, onPathChange]);
 
   return (
     <section className="preview-panel vector-editor">

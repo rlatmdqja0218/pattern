@@ -34,7 +34,7 @@ export default function App() {
       </aside>
       <main className="app__previews">
         <PatternCanvas imageUrl={image} params={params} />
-        <VectorEditorCanvas onPathChange={handlePathChange} />
+        <VectorEditorCanvas imageUrl={image} onPathChange={handlePathChange} />
         <MockupViewer imageUrl={image} />
       </main>
     </div>
