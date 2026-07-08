@@ -5,7 +5,8 @@ import * as THREE from 'three';
 /**
  * 3D 목업의 임시 오브젝트. 지금은 천천히 회전하는 박스이며,
  * 이미지가 업로드되면 표면 텍스처로 입혀 상태 연결만 확인한다.
- * 추후 가전제품(냉장고 등) 모델과 심리스 패턴 텍스처로 교체 예정.
+ * 다음 단계에서 PatternCanvas의 결과 캔버스를 CanvasTexture로 받아
+ * 가전제품 모델 표면에 래핑하는 구조로 교체 예정.
  */
 function MockupPlaceholder({ imageUrl }) {
   const meshRef = useRef(null);
@@ -45,9 +46,9 @@ function MockupPlaceholder({ imageUrl }) {
 }
 
 /**
- * 3D Mockup 프리뷰 (three.js + @react-three/fiber 기반) 빈 껍데기.
+ * 3D Mockup 프리뷰 (three.js + @react-three/fiber 기반).
  */
-export default function Preview3D({ imageUrl }) {
+export default function MockupViewer({ imageUrl }) {
   return (
     <section className="preview-panel">
       <header className="preview-panel__header">

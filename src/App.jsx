@@ -1,6 +1,7 @@
 import { LevaPanel, useControls, useCreateStore } from 'leva';
-import Preview2D from './components/Preview2D';
-import Preview3D from './components/Preview3D';
+import PatternCanvas from './components/PatternCanvas';
+import MockupViewer from './components/MockupViewer';
+import { patternControlSchema } from './state/patternDefaults';
 import './App.css';
 
 export default function App() {
@@ -8,11 +9,11 @@ export default function App() {
 
   // Leva 사이드바 컨트롤 — 이 값들이 앱의 단일 상태 소스(state)가 된다.
   // image: 업로드 시 object URL 문자열이 상태로 저장된다.
-  const { image, scale, spacing } = useControls(
+  // 나머지 패턴 파라미터 스키마는 state/patternDefaults.js에서 관리한다.
+  const { image, ...params } = useControls(
     {
       image: { image: undefined, label: '이미지 업로드' },
-      scale: { value: 1, min: 0.1, max: 3, step: 0.05, label: '크기 (Scale)' },
-      spacing: { value: 0, min: 0, max: 200, step: 1, label: '간격 (Spacing)' },
+      ...patternControlSchema,
     },
     { store },
   );
@@ -25,8 +26,8 @@ export default function App() {
         <LevaPanel store={store} fill flat titleBar={false} />
       </aside>
       <main className="app__previews">
-        <Preview2D imageUrl={image} scale={scale} spacing={spacing} />
-        <Preview3D imageUrl={image} />
+        <PatternCanvas imageUrl={image} params={params} />
+        <MockupViewer imageUrl={image} />
       </main>
     </div>
   );
