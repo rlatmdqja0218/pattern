@@ -1,0 +1,95 @@
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 12px;
+  background: #181c20;
+  border-right: 1px solid #2a2f36;
+  overflow-y: auto;
+}
+
+.app__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #e8eaed;
+}
+
+.app__subtitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #8a919c;
+}
+
+.app__previews {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: #101317;
+  min-width: 0;
+  min-height: 0;
+}
+
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #181c20;
+  border: 1px solid #2a2f36;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2f36;
+}
+
+.preview-panel__header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c9ced6;
+}
+
+.preview-panel__meta {
+  font-size: 11px;
+  color: #6f7681;
+}
+
+.preview-panel__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background:
+    repeating-conic-gradient(#1d2126 0% 25%, #181c20 0% 50%)
+    0 0 / 24px 24px;
+}
+
+.preview-panel__body canvas {
+  display: block;
+}
+
+.preview-panel__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 13px;
+  color: #6f7681;
+  pointer-events: none;
+}
