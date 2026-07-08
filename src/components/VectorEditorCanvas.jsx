@@ -18,12 +18,6 @@ const HIT_OPTIONS = {
 };
 
 const TRACE_ANALYSIS_SIZE = 640;
-const TRACE_OPTIONS = {
-  traceMode: 'auto',
-  traceThreshold: 0.52,
-  traceSimplify: 10,
-  traceInvert: false,
-};
 
 function getStatusLabel(hitType) {
   if (hitType === 'segment') return '앵커 드래그 중';
@@ -68,14 +62,26 @@ function fitPathDataToView(pathData, imageSize, scope) {
   };
 }
 
-export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
+export default function VectorEditorCanvas({ imageUrl, params = {}, onPathChange }) {
   const canvasRef = useRef(null);
   const scopeRef = useRef(null);
   const pathRef = useRef(null);
   const rasterRef = useRef(null);
   const dragTargetRef = useRef(null);
+  const onPathChangeRef = useRef(onPathChange);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
+  const {
+    traceMode = 'auto',
+    traceThreshold = 0.52,
+    traceSimplify = 10,
+    traceInvert = false,
+    traceMaxSegments = 96,
+  } = params;
+
+  useEffect(() => {
+    onPathChangeRef.current = onPathChange;
+  }, [onPathChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -94,7 +100,7 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
     scopeRef.current = scope;
     setStatus(
       imageUrl
-        ? '참고 이미지 로딩 및 윤곽 추출 중'
+        ? '참고 이미지 로딩 중'
         : '앵커 또는 핸들을 직접 드래그하세요',
     );
 
@@ -121,41 +127,7 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
     editLayer.activate();
     const editablePath = createDefaultEditablePath(scope);
     pathRef.current = editablePath;
-    onPathChange?.(serializePaperPath(editablePath));
-
-    if (imageUrl) {
-      loadImage(imageUrl)
-        .then((image) => {
-          if (disposed) return null;
-          return analyzeImage(image, TRACE_ANALYSIS_SIZE);
-        })
-        .then((analysis) => {
-          if (disposed || !analysis) return;
-          const tracedPathData = traceImageDataToEditablePathData(
-            analysis.imageData,
-            TRACE_OPTIONS,
-          );
-          if (!tracedPathData?.segments?.length) {
-            setStatus('윤곽 추출 실패 · 기본 경로로 편집하세요');
-            return;
-          }
-
-          const fittedPathData = fitPathDataToView(
-            tracedPathData,
-            analysis.imageData,
-            scope,
-          );
-          applySerializedPath(editablePath, fittedPathData);
-          editablePath.selected = true;
-          editablePath.fullySelected = true;
-          scope.view.update();
-          onPathChange?.(serializePaperPath(editablePath));
-          setStatus('자동 윤곽 추출 완료 · 앵커 또는 핸들을 드래그하세요');
-        })
-        .catch(() => {
-          if (!disposed) setStatus('윤곽 추출 실패 · 기본 경로로 편집하세요');
-        });
-    }
+    onPathChangeRef.current?.(serializePaperPath(editablePath));
 
     const tool = new scope.Tool();
 
@@ -194,7 +166,7 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
       editablePath.selected = true;
       editablePath.fullySelected = true;
       scope.view.update();
-      onPathChange?.(serializePaperPath(editablePath));
+      onPathChangeRef.current?.(serializePaperPath(editablePath));
     };
 
     tool.onMouseUp = () => {
@@ -214,7 +186,75 @@ export default function VectorEditorCanvas({ imageUrl, onPathChange }) {
       pathRef.current = null;
       rasterRef.current = null;
     };
-  }, [imageUrl, width, height, onPathChange]);
+  }, [imageUrl, width, height]);
+
+  useEffect(() => {
+    const scope = scopeRef.current;
+    const editablePath = pathRef.current;
+    if (!scope || !editablePath || width <= 0 || height <= 0) return undefined;
+
+    if (!imageUrl) {
+      setStatus('앵커 또는 핸들을 직접 드래그하세요');
+      return undefined;
+    }
+
+    if (traceMode === 'manual') {
+      setStatus('수동 모드 · 현재 경로를 유지합니다');
+      return undefined;
+    }
+
+    let disposed = false;
+    setStatus('자동 윤곽 추출 중');
+
+    loadImage(imageUrl)
+      .then((image) => {
+        if (disposed) return null;
+        return analyzeImage(image, TRACE_ANALYSIS_SIZE);
+      })
+      .then((analysis) => {
+        if (disposed || !analysis) return;
+
+        const tracedPathData = traceImageDataToEditablePathData(analysis.imageData, {
+          traceMode,
+          traceThreshold,
+          traceSimplify,
+          traceInvert,
+          maxSegments: traceMaxSegments,
+        });
+        if (!tracedPathData?.segments?.length) {
+          setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
+          return;
+        }
+
+        const fittedPathData = fitPathDataToView(
+          tracedPathData,
+          analysis.imageData,
+          scope,
+        );
+        applySerializedPath(editablePath, fittedPathData);
+        editablePath.selected = true;
+        editablePath.fullySelected = true;
+        scope.view.update();
+        onPathChangeRef.current?.(serializePaperPath(editablePath));
+        setStatus('자동 윤곽 추출 완료 · 앵커 또는 핸들을 드래그하세요');
+      })
+      .catch(() => {
+        if (!disposed) setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    imageUrl,
+    traceInvert,
+    traceMaxSegments,
+    traceMode,
+    traceSimplify,
+    traceThreshold,
+    width,
+    height,
+  ]);
 
   return (
     <section className="preview-panel vector-editor">

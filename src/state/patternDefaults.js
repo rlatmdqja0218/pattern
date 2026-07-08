@@ -93,6 +93,32 @@ export const patternControlSchema = {
     value: 1, min: 0.05, max: 1, step: 0.05,
     label: '모티프 투명도', render: isVector,
   },
+  traceMode: {
+    value: 'auto',
+    options: ['auto', 'manual'],
+    label: '윤곽 추출 모드',
+    render: isVector,
+  },
+  traceThreshold: {
+    value: 0.52, min: 0, max: 1, step: 0.01,
+    label: '윤곽 기준값',
+    render: isVector,
+  },
+  traceSimplify: {
+    value: 10, min: 1, max: 40, step: 1,
+    label: '윤곽 단순화',
+    render: isVector,
+  },
+  traceInvert: {
+    value: false,
+    label: '윤곽 반전',
+    render: isVector,
+  },
+  traceMaxSegments: {
+    value: 96, min: 8, max: 240, step: 1,
+    label: '최대 앵커 수',
+    render: isVector,
+  },
 
   // — 공통 —
   backgroundColor: { value: '#f5f1e8', label: '배경 색상' },
