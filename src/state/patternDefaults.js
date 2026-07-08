@@ -13,7 +13,7 @@ const isVector = (get) => get('mode') === 'vector';
 /** Leva useControls에 그대로 전달하는 스키마 */
 export const patternControlSchema = {
   mode: {
-    value: 'halftone',
+    value: 'vector',
     options: ['halftone', 'standard', 'mirror', 'vector'],
     label: '패턴 모드',
   },
@@ -165,7 +165,7 @@ export const patternControlSchema = {
   },
   motifAssemblyMode: {
     value: 'fragment',
-    options: ['reconstruct', 'fragment'],
+    options: ['fragment', 'reconstruct'],
     label: '모티프 조립 방식',
     render: isVector,
   },

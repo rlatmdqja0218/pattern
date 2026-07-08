@@ -200,12 +200,19 @@
   background: #15191e;
 }
 
+.vector-editor__header-actions,
+.vector-editor__history-controls,
 .vector-editor__zoom-controls {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
+.vector-editor__header-actions {
+  gap: 8px;
+}
+
+.vector-editor__history-controls button,
 .vector-editor__zoom-controls button {
   min-width: 28px;
   height: 24px;
@@ -220,9 +227,15 @@
   cursor: pointer;
 }
 
+.vector-editor__history-controls button:hover:not(:disabled),
 .vector-editor__zoom-controls button:hover {
   color: #e9f4ff;
   border-color: #3f4c5b;
+}
+
+.vector-editor__history-controls button:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .vector-editor__candidate {

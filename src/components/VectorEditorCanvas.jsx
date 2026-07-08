@@ -13,6 +13,7 @@ import {
 } from '../engines/pathTransform';
 import { traceImageDataToPathCandidates } from '../engines/vectorTrace';
 import { useElementSize } from '../hooks/useElementSize';
+import { useUndoRedo } from '../hooks/useUndoRedo';
 import PreviewPanel from './PreviewPanel';
 
 const HIT_OPTIONS = {
@@ -27,6 +28,13 @@ const TRACE_ANALYSIS_SIZE = 640;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 6;
 const CANDIDATE_ROLES = ['primary', 'secondary', 'accent', 'ignore'];
+const INITIAL_EDITOR_STATE = {
+  pathCandidates: [],
+  selectedCandidateIds: [],
+  candidateRoles: {},
+  editingCandidateId: null,
+  editablePath: null,
+};
 
 function getStatusLabel(hitType) {
   if (hitType === 'segment') return '앵커 드래그 중';
@@ -93,6 +101,19 @@ function createDefaultCandidateRoles(candidates) {
   );
 }
 
+function cloneEditorState(editorState) {
+  return {
+    ...editorState,
+    pathCandidates: editorState.pathCandidates.map((candidate) => ({
+      ...candidate,
+      editablePath: clonePathData(candidate.editablePath),
+    })),
+    selectedCandidateIds: [...editorState.selectedCandidateIds],
+    candidateRoles: { ...editorState.candidateRoles },
+    editablePath: clonePathData(editorState.editablePath),
+  };
+}
+
 function getSelectedMotifs(pathCandidates, selectedCandidateIds, candidateRoles) {
   return selectedCandidateIds
     .map((candidateId) => pathCandidates.find((candidate) => candidate.id === candidateId))
@@ -112,9 +133,13 @@ function getSelectedMotifs(pathCandidates, selectedCandidateIds, candidateRoles)
     .filter(Boolean);
 }
 
-function shouldIgnoreSpaceShortcut(event) {
+function shouldIgnoreEditorShortcut(event) {
   const tagName = event.target?.tagName;
-  return ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(tagName) || event.target?.isContentEditable;
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(tagName) || event.target?.isContentEditable;
+}
+
+function shouldIgnoreSpaceShortcut(event) {
+  return event.target?.tagName === 'BUTTON' || shouldIgnoreEditorShortcut(event);
 }
 
 export default function VectorEditorCanvas({
@@ -128,19 +153,36 @@ export default function VectorEditorCanvas({
   const pathRef = useRef(null);
   const rasterRef = useRef(null);
   const dragTargetRef = useRef(null);
+  const dragStartSnapshotRef = useRef(null);
+  const dragChangedRef = useRef(false);
   const spacePressedRef = useRef(false);
   const sizeRef = useRef({ width: 0, height: 0 });
   const onPathChangeRef = useRef(onPathChange);
   const onMotifsChangeRef = useRef(onMotifsChange);
   const editingCandidateIdRef = useRef(null);
   const pathCandidatesRef = useRef([]);
+  const editorStateRef = useRef(INITIAL_EDITOR_STATE);
   const [containerRef, { width, height }] = useElementSize();
   const [status, setStatus] = useState('앵커 또는 핸들을 직접 드래그하세요');
   const [zoomPercent, setZoomPercent] = useState(100);
-  const [pathCandidates, setPathCandidates] = useState([]);
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
-  const [candidateRoles, setCandidateRoles] = useState({});
-  const [editingCandidateId, setEditingCandidateId] = useState(null);
+  const {
+    present: editorState,
+    set: setEditorState,
+    replace: replaceEditorState,
+    commit: commitEditorState,
+    undo,
+    redo,
+    reset: resetEditorState,
+    canUndo,
+    canRedo,
+    lastAction,
+  } = useUndoRedo(INITIAL_EDITOR_STATE, { limit: 80 });
+  const {
+    pathCandidates,
+    selectedCandidateIds,
+    candidateRoles,
+    editingCandidateId,
+  } = editorState;
   const hasCanvasSize = width > 0 && height > 0;
   const {
     traceMode = 'auto',
@@ -166,12 +208,10 @@ export default function VectorEditorCanvas({
   }, [onMotifsChange]);
 
   useEffect(() => {
+    editorStateRef.current = editorState;
     editingCandidateIdRef.current = editingCandidateId;
-  }, [editingCandidateId]);
-
-  useEffect(() => {
     pathCandidatesRef.current = pathCandidates;
-  }, [pathCandidates]);
+  }, [editingCandidateId, editorState, pathCandidates]);
 
   useEffect(() => {
     onMotifsChangeRef.current?.(
@@ -179,19 +219,43 @@ export default function VectorEditorCanvas({
     );
   }, [candidateRoles, pathCandidates, selectedCandidateIds]);
 
-  const applyCandidate = useCallback((candidate) => {
+  const syncPaperPath = useCallback((pathData, candidate = null) => {
     const scope = scopeRef.current;
     const editablePath = pathRef.current;
-    if (!scope || !editablePath || !candidate?.editablePath?.segments?.length) return;
+    if (!scope || !editablePath || !pathData?.segments?.length) return;
 
-    const pathData = getViewPathData(candidate, scope);
-    applySerializedPath(editablePath, pathData);
+    const viewPathData = candidate
+      ? getViewPathData({ ...candidate, editablePath: pathData }, scope)
+      : clonePathData(pathData);
+    applySerializedPath(editablePath, viewPathData);
     editablePath.selected = true;
     editablePath.fullySelected = true;
     scope.view.update();
-    setEditingCandidateId(candidate.id);
-    onPathChangeRef.current?.(clonePathData(candidate.editablePath));
   }, []);
+
+  const applyCandidate = useCallback((candidate) => {
+    if (!candidate?.editablePath?.segments?.length) return;
+    syncPaperPath(candidate.editablePath, candidate);
+    replaceEditorState((currentState) => ({
+      ...currentState,
+      editingCandidateId: candidate.id,
+      editablePath: clonePathData(candidate.editablePath),
+    }));
+    onPathChangeRef.current?.(clonePathData(candidate.editablePath));
+  }, [replaceEditorState, syncPaperPath]);
+
+  useEffect(() => {
+    if (lastAction !== 'undo' && lastAction !== 'redo') return;
+    const currentPath = editorState.editablePath;
+    if (!currentPath?.segments?.length) return;
+    const editingCandidate = editorState.pathCandidates.find(
+      (candidate) => candidate.id === editorState.editingCandidateId,
+    );
+
+    syncPaperPath(currentPath, editingCandidate);
+    onPathChangeRef.current?.(clonePathData(currentPath));
+    setStatus(lastAction === 'undo' ? '이전 편집 상태로 되돌렸습니다' : '다음 편집 상태를 복원했습니다');
+  }, [editorState, lastAction, syncPaperPath]);
 
   const handleCandidateEdit = useCallback((candidate, index) => {
     applyCandidate(candidate);
@@ -201,42 +265,49 @@ export default function VectorEditorCanvas({
   const handleCandidateToggle = useCallback((event, candidate, index) => {
     event.stopPropagation();
     const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole(index);
-    if (role === 'ignore') {
-      setCandidateRoles((currentRoles) => ({
-        ...currentRoles,
-        [candidate.id]: getDefaultCandidateRole(index),
-      }));
-      setSelectedCandidateIds((currentIds) => (
-        currentIds.includes(candidate.id) ? currentIds : [...currentIds, candidate.id]
-      ));
-      setStatus(`후보 ${index + 1} 패턴 포함 상태 변경`);
-      return;
-    }
-
-    setSelectedCandidateIds((currentIds) => (
-      currentIds.includes(candidate.id)
-        ? currentIds.filter((candidateId) => candidateId !== candidate.id)
-        : [...currentIds, candidate.id]
-    ));
+    setEditorState((currentState) => {
+      const isSelected = currentState.selectedCandidateIds.includes(candidate.id);
+      return {
+        ...currentState,
+        candidateRoles: role === 'ignore'
+          ? {
+            ...currentState.candidateRoles,
+            [candidate.id]: getDefaultCandidateRole(index),
+          }
+          : currentState.candidateRoles,
+        selectedCandidateIds: role === 'ignore'
+          ? currentState.selectedCandidateIds.includes(candidate.id)
+            ? currentState.selectedCandidateIds
+            : [...currentState.selectedCandidateIds, candidate.id]
+          : isSelected
+            ? currentState.selectedCandidateIds.filter((candidateId) => candidateId !== candidate.id)
+            : [...currentState.selectedCandidateIds, candidate.id],
+      };
+    });
     setStatus(`후보 ${index + 1} 패턴 포함 상태 변경`);
-  }, [candidateRoles]);
+  }, [candidateRoles, setEditorState]);
 
   const handleCandidateRoleChange = useCallback((event, candidate, index) => {
     event.stopPropagation();
     const role = event.target.value;
 
-    setCandidateRoles((currentRoles) => ({
-      ...currentRoles,
-      [candidate.id]: role,
-    }));
-    setSelectedCandidateIds((currentIds) => {
-      if (role === 'ignore') {
-        return currentIds.filter((candidateId) => candidateId !== candidate.id);
-      }
-      return currentIds.includes(candidate.id) ? currentIds : [...currentIds, candidate.id];
+    setEditorState((currentState) => {
+      const currentIds = currentState.selectedCandidateIds;
+      return {
+        ...currentState,
+        candidateRoles: {
+          ...currentState.candidateRoles,
+          [candidate.id]: role,
+        },
+        selectedCandidateIds: role === 'ignore'
+          ? currentIds.filter((candidateId) => candidateId !== candidate.id)
+          : currentIds.includes(candidate.id)
+            ? currentIds
+            : [...currentIds, candidate.id],
+      };
     });
     setStatus(`후보 ${index + 1} 역할: ${role}`);
-  }, []);
+  }, [setEditorState]);
 
   const syncZoomState = useCallback(() => {
     const scope = scopeRef.current;
@@ -292,9 +363,29 @@ export default function VectorEditorCanvas({
 
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.code !== 'Space' || shouldIgnoreSpaceShortcut(event)) return;
-      spacePressedRef.current = true;
-      event.preventDefault();
+      if (event.code === 'Space') {
+        if (shouldIgnoreSpaceShortcut(event)) return;
+        spacePressedRef.current = true;
+        event.preventDefault();
+        return;
+      }
+
+      if (shouldIgnoreEditorShortcut(event)) return;
+      const modifierPressed = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      const isRedo = modifierPressed && (
+        (key === 'z' && event.shiftKey)
+        || key === 'y'
+      );
+      const isUndo = modifierPressed && key === 'z' && !event.shiftKey;
+
+      if (isRedo && canRedo) {
+        event.preventDefault();
+        redo();
+      } else if (isUndo && canUndo) {
+        event.preventDefault();
+        undo();
+      }
     };
     const handleKeyUp = (event) => {
       if (event.code !== 'Space') return;
@@ -308,7 +399,7 @@ export default function VectorEditorCanvas({
       window.removeEventListener('keyup', handleKeyUp);
       spacePressedRef.current = false;
     };
-  }, []);
+  }, [canRedo, canUndo, redo, undo]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -380,7 +471,12 @@ export default function VectorEditorCanvas({
     editLayer.activate();
     const editablePath = createDefaultEditablePath(scope);
     pathRef.current = editablePath;
-    onPathChangeRef.current?.(serializePaperPath(editablePath));
+    const defaultPathData = serializePaperPath(editablePath);
+    replaceEditorState((currentState) => ({
+      ...currentState,
+      editablePath: defaultPathData,
+    }));
+    onPathChangeRef.current?.(defaultPathData);
 
     const tool = new scope.Tool();
 
@@ -404,6 +500,8 @@ export default function VectorEditorCanvas({
         type: hit.type,
         segment: hit.segment,
       };
+      dragStartSnapshotRef.current = cloneEditorState(editorStateRef.current);
+      dragChangedRef.current = false;
       setStatus(getStatusLabel(hit.type));
     };
 
@@ -430,6 +528,7 @@ export default function VectorEditorCanvas({
       if (dragTarget.type === 'handle-out') {
         dragTarget.segment.handleOut = dragTarget.segment.handleOut.add(event.delta);
       }
+      dragChangedRef.current = true;
 
       editablePath.selected = true;
       editablePath.fullySelected = true;
@@ -446,25 +545,34 @@ export default function VectorEditorCanvas({
 
       onPathChangeRef.current?.(nextPathData);
 
-      if (editingCandidateId && editingCandidate) {
-        setPathCandidates((currentCandidates) => currentCandidates.map((candidate) => (
-          candidate.id === editingCandidateId
-            ? { ...candidate, editablePath: clonePathData(nextPathData) }
-            : candidate
-        )));
-      }
+      replaceEditorState((currentState) => ({
+        ...currentState,
+        editablePath: clonePathData(nextPathData),
+        pathCandidates: editingCandidateId && editingCandidate
+          ? currentState.pathCandidates.map((candidate) => (
+            candidate.id === editingCandidateId
+              ? { ...candidate, editablePath: clonePathData(nextPathData) }
+              : candidate
+          ))
+          : currentState.pathCandidates,
+      }));
     };
 
     tool.onMouseUp = () => {
-      if (dragTargetRef.current) {
+      if (dragChangedRef.current && dragStartSnapshotRef.current) {
+        commitEditorState(dragStartSnapshotRef.current);
         setStatus('경로가 변경되었습니다');
       }
       dragTargetRef.current = null;
+      dragStartSnapshotRef.current = null;
+      dragChangedRef.current = false;
     };
 
     return () => {
       disposed = true;
       dragTargetRef.current = null;
+      dragStartSnapshotRef.current = null;
+      dragChangedRef.current = false;
       tool.remove();
       rasterRef.current?.remove();
       scope.project.remove();
@@ -472,7 +580,7 @@ export default function VectorEditorCanvas({
       pathRef.current = null;
       rasterRef.current = null;
     };
-  }, [hasCanvasSize, imageUrl]);
+  }, [commitEditorState, hasCanvasSize, imageUrl, replaceEditorState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -489,10 +597,10 @@ export default function VectorEditorCanvas({
       (candidate) => candidate.id === editingCandidateIdRef.current,
     );
     if (editingCandidate) {
-      applyCandidate(editingCandidate);
+      syncPaperPath(editingCandidate.editablePath, editingCandidate);
     }
     scope.view.update();
-  }, [applyCandidate, hasCanvasSize, height, width]);
+  }, [hasCanvasSize, height, syncPaperPath, width]);
 
   useEffect(() => {
     const scope = scopeRef.current;
@@ -500,10 +608,12 @@ export default function VectorEditorCanvas({
     if (!scope || !editablePath || !hasCanvasSize) return undefined;
 
     if (!imageUrl) {
-      setPathCandidates([]);
-      setSelectedCandidateIds([]);
-      setCandidateRoles({});
-      setEditingCandidateId(null);
+      const defaultPathData = serializePaperPath(editablePath);
+      resetEditorState({
+        ...INITIAL_EDITOR_STATE,
+        editablePath: defaultPathData,
+      });
+      onPathChangeRef.current?.(defaultPathData);
       setStatus('앵커 또는 핸들을 직접 드래그하세요');
       return undefined;
     }
@@ -514,10 +624,10 @@ export default function VectorEditorCanvas({
     }
 
     let disposed = false;
-    setPathCandidates([]);
-    setSelectedCandidateIds([]);
-    setCandidateRoles({});
-    setEditingCandidateId(null);
+    resetEditorState({
+      ...INITIAL_EDITOR_STATE,
+      editablePath: serializePaperPath(editablePath),
+    });
     setStatus('자동 윤곽 추출 중');
 
     loadImage(imageUrl)
@@ -539,18 +649,26 @@ export default function VectorEditorCanvas({
           curveSimplifyTolerance,
         });
         if (!candidates.length) {
-          setPathCandidates([]);
-          setSelectedCandidateIds([]);
-          setCandidateRoles({});
-          setEditingCandidateId(null);
+          const fallbackPath = serializePaperPath(editablePath);
+          resetEditorState({
+            ...INITIAL_EDITOR_STATE,
+            editablePath: fallbackPath,
+          });
+          onPathChangeRef.current?.(fallbackPath);
           setStatus('윤곽 추출 실패 · 현재 경로로 편집하세요');
           return;
         }
 
-        setPathCandidates(candidates);
-        setCandidateRoles(createDefaultCandidateRoles(candidates));
-        setSelectedCandidateIds([candidates[0].id]);
-        applyCandidate(candidates[0]);
+        const firstCandidate = candidates[0];
+        resetEditorState({
+          pathCandidates: candidates,
+          selectedCandidateIds: [firstCandidate.id],
+          candidateRoles: createDefaultCandidateRoles(candidates),
+          editingCandidateId: firstCandidate.id,
+          editablePath: clonePathData(firstCandidate.editablePath),
+        });
+        syncPaperPath(firstCandidate.editablePath, firstCandidate);
+        onPathChangeRef.current?.(clonePathData(firstCandidate.editablePath));
         setStatus(`자동 윤곽 추출 완료 · 후보 ${candidates.length}개`);
       })
       .catch(() => {
@@ -566,7 +684,8 @@ export default function VectorEditorCanvas({
     curveSmoothness,
     hasCanvasSize,
     imageUrl,
-    applyCandidate,
+    resetEditorState,
+    syncPaperPath,
     traceInvert,
     traceMaxSegments,
     traceMode,
@@ -574,20 +693,42 @@ export default function VectorEditorCanvas({
     traceThreshold,
   ]);
 
-  const zoomActions = (
-    <div className="vector-editor__zoom-controls" aria-label="벡터 편집 화면 조절">
-      <button type="button" onClick={() => zoomBy(1.2)} title="확대">
-        +
-      </button>
-      <button type="button" onClick={() => zoomBy(0.8)} title="축소">
-        -
-      </button>
-      <button type="button" onClick={fitView} title="화면 맞춤">
-        맞춤
-      </button>
-      <button type="button" onClick={setZoomToActualSize} title="100%">
-        100%
-      </button>
+  const editorActions = (
+    <div className="vector-editor__header-actions">
+      <div className="vector-editor__history-controls" aria-label="편집 기록 조절">
+        <button
+          type="button"
+          onClick={undo}
+          disabled={!canUndo}
+          aria-label="되돌리기"
+          title="되돌리기 (Ctrl/Cmd+Z)"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          onClick={redo}
+          disabled={!canRedo}
+          aria-label="다시 실행"
+          title="다시 실행 (Ctrl/Cmd+Shift+Z)"
+        >
+          ↷
+        </button>
+      </div>
+      <div className="vector-editor__zoom-controls" aria-label="벡터 편집 화면 조절">
+        <button type="button" onClick={() => zoomBy(1.2)} title="확대">
+          +
+        </button>
+        <button type="button" onClick={() => zoomBy(0.8)} title="축소">
+          -
+        </button>
+        <button type="button" onClick={fitView} title="화면 맞춤">
+          맞춤
+        </button>
+        <button type="button" onClick={setZoomToActualSize} title="100%">
+          100%
+        </button>
+      </div>
     </div>
   );
 
@@ -596,7 +737,7 @@ export default function VectorEditorCanvas({
       title="벡터 편집 레이어"
       meta={`${status} · ${zoomPercent}%`}
       className="vector-editor"
-      actions={zoomActions}
+      actions={editorActions}
     >
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
