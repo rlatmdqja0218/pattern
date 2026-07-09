@@ -355,6 +355,16 @@ export const patternControlSchema = {
     value: false,
     label: 'UV 체크 보기', render: isCustomStl,
   },
+  stlTextureResolution: {
+    value: 2048,
+    options: [1024, 2048, 4096],
+    label: 'STL 텍스처 해상도', render: isCustomStl,
+  },
+  stlTextureBackgroundMode: {
+    value: 'solidBase',
+    options: ['solidBase', 'transparentPattern'],
+    label: 'STL 텍스처 배경', render: isCustomStl,
+  },
   stlPatternScale: {
     value: 1, min: 0.1, max: 10, step: 0.05,
     label: 'STL 패턴 크기', render: isCustomStl,
@@ -372,11 +382,11 @@ export const patternControlSchema = {
     label: 'STL 패턴 Y 이동', render: isCustomStl,
   },
   stlPatternRepeatX: {
-    value: 3, min: 0.2, max: 20, step: 0.1,
+    value: 2.5, min: 0.2, max: 12, step: 0.1,
     label: 'STL 반복 X', render: isCustomStl,
   },
   stlPatternRepeatY: {
-    value: 3, min: 0.2, max: 20, step: 0.1,
+    value: 2.5, min: 0.2, max: 12, step: 0.1,
     label: 'STL 반복 Y', render: isCustomStl,
   },
   stlBaseColor: {

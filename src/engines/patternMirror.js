@@ -33,7 +33,7 @@ function drawMirrorMetaTile(ctx, source, x, y, width, height) {
  * @param {number} params.tileSpacing 메타 타일 간 여백(px)
  * @param {string} params.backgroundColor 배경 색상
  */
-export function renderMirror(canvas, imageData, params) {
+export function renderMirror(canvas, imageData, params, extras = {}) {
   if (!canvas || !imageData) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -43,8 +43,11 @@ export function renderMirror(canvas, imageData, params) {
 
   const { width: cw, height: ch } = canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = params.backgroundColor;
-  ctx.fillRect(0, 0, cw, ch);
+  ctx.clearRect(0, 0, cw, ch);
+  if (!extras.transparentBackground) {
+    ctx.fillStyle = params.backgroundColor;
+    ctx.fillRect(0, 0, cw, ch);
+  }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 

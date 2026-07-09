@@ -17,6 +17,7 @@ export default function PatternCanvas({
   editablePath,
   selectedMotifs = [],
   onPatternCanvasUpdate,
+  onPatternSourceUpdate,
   panelCollapsed,
   onTogglePanel,
 }) {
@@ -49,6 +50,10 @@ export default function PatternCanvas({
       cancelled = true;
     };
   }, [imageUrl]);
+
+  useEffect(() => {
+    onPatternSourceUpdate?.(analysis?.imageData ?? null);
+  }, [analysis, onPatternSourceUpdate]);
 
   // 2단계: 분석 데이터·파라미터·캔버스 크기가 바뀔 때마다 즉시 재렌더링
   useEffect(() => {

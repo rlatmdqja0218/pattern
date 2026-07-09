@@ -46,6 +46,7 @@ export default function App() {
   const [selectedMotifs, setSelectedMotifs] = useState([]);
   const [patternCanvas, setPatternCanvas] = useState(null);
   const [patternVersion, setPatternVersion] = useState(0);
+  const [patternImageData, setPatternImageData] = useState(null);
   // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
   const [stlUrl, setStlUrl] = useState(null);
   const stlUrlRef = useRef(null);
@@ -163,6 +164,10 @@ export default function App() {
     setPatternVersion((currentVersion) => currentVersion + 1);
   }, []);
 
+  const handlePatternSourceUpdate = useCallback((imageData) => {
+    setPatternImageData(imageData);
+  }, []);
+
   const handleStlUpload = useCallback((event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -240,6 +245,7 @@ export default function App() {
               editablePath={editablePath}
               selectedMotifs={selectedMotifs}
               onPatternCanvasUpdate={handlePatternCanvasUpdate}
+              onPatternSourceUpdate={handlePatternSourceUpdate}
               panelCollapsed={patternCollapsed}
               onTogglePanel={() => togglePanel('pattern2d')}
             />
@@ -280,6 +286,9 @@ export default function App() {
           <MockupViewer
             patternCanvas={patternCanvas}
             patternVersion={patternVersion}
+            patternImageData={patternImageData}
+            editablePath={editablePath}
+            selectedMotifs={selectedMotifs}
             params={params}
             stlUrl={stlUrl}
             panelCollapsed={mockupCollapsed}

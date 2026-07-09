@@ -97,15 +97,18 @@ export function generateHalftoneDots(imageData, params) {
  * @param {ImageData} imageData 분석용 픽셀 데이터
  * @param {object} params generateHalftoneDots 파라미터 + foregroundColor/backgroundColor
  */
-export function renderHalftone(canvas, imageData, params) {
+export function renderHalftone(canvas, imageData, params, extras = {}) {
   if (!canvas || !imageData) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const { width: cw, height: ch } = canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = params.backgroundColor;
-  ctx.fillRect(0, 0, cw, ch);
+  ctx.clearRect(0, 0, cw, ch);
+  if (!extras.transparentBackground) {
+    ctx.fillStyle = params.backgroundColor;
+    ctx.fillRect(0, 0, cw, ch);
+  }
 
   // 이미지 좌표계 → 캔버스 좌표계 (contain, 중앙 정렬)
   const scale = Math.min(cw / imageData.width, ch / imageData.height);

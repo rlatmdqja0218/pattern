@@ -19,6 +19,7 @@ import {
   updatePatternMaterial,
   updatePatternTextureTransform,
 } from '../engines/stlMapping';
+import { createStlPatternTextureCanvas } from '../engines/stlPatternTexture';
 
 const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternScaleX: 1,
@@ -27,6 +28,32 @@ const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternOffsetY: 0,
   mockupPatternRotation: 0,
 };
+
+const STL_TEXTURE_PARAM_KEYS = new Set([
+  'stlTextureResolution',
+  'stlTextureBackgroundMode',
+  'stlBaseColor',
+]);
+
+function getStlTextureRenderParams(params) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([key]) => (
+      !key.startsWith('stl') || STL_TEXTURE_PARAM_KEYS.has(key)
+    )),
+  );
+}
+
+function configureStlTextureSampling(texture, gl) {
+  if (!texture) return;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.max(1, gl.capabilities.getMaxAnisotropy());
+  texture.needsUpdate = true;
+}
 
 function applyTextureSettings(texture, params = {}) {
   if (!texture) return;
@@ -179,19 +206,24 @@ function ProductBackPanelMockup({ patternCanvas, patternVersion, params }) {
 /**
  * 사용자 업로드 STL 목업.
  * STL은 보통 UV가 없으므로 engines/stlMapping이 planar/box UV를 생성하고,
- * 2D 패턴과 동일한 CanvasTexture를 머티리얼에 입혀 실시간 반영한다.
+ * 별도 고해상도 캔버스에 패턴을 다시 그려 독립 CanvasTexture로 사용한다.
  */
 function CustomStlMockup({
   stlUrl,
-  patternCanvas,
-  patternVersion,
+  patternImageData,
+  editablePath,
+  selectedMotifs = [],
   params,
   fitRequest,
 }) {
   const [geometry, setGeometry] = useState(null);
-  const [texture, setTexture] = useState(null);
   const controlsRef = useRef(null);
-  const { camera, size, invalidate } = useThree();
+  const {
+    camera,
+    gl,
+    size,
+    invalidate,
+  } = useThree();
   const mappingOptions = useMemo(() => ({
     stlMappingMode: params.stlMappingMode,
     stlProjectionAxis: params.stlProjectionAxis,
@@ -244,33 +276,42 @@ function CustomStlMockup({
     if (geometry) applyStlUV(geometry, mappingOptions);
   }, [geometry, mappingOptions]);
 
-  // 2D 패턴 캔버스 → CanvasTexture (monitor 목업과 동일한 소스 캔버스 공유)
-  useEffect(() => {
-    if (!patternCanvas) {
-      setTexture(null);
-      return;
-    }
-    const canvasTexture = new THREE.CanvasTexture(patternCanvas);
-    canvasTexture.colorSpace = THREE.SRGBColorSpace;
-    setTexture(canvasTexture);
-    return () => canvasTexture.dispose();
-  }, [patternCanvas]);
+  const textureParamsKey = JSON.stringify(getStlTextureRenderParams(params));
+  const textureRenderParams = useMemo(
+    () => JSON.parse(textureParamsKey),
+    [textureParamsKey],
+  );
+  const textureCanvas = useMemo(() => createStlPatternTextureCanvas({
+    params: textureRenderParams,
+    editablePath,
+    selectedMotifs,
+    imageData: patternImageData,
+    width: textureRenderParams.stlTextureResolution,
+    height: textureRenderParams.stlTextureResolution,
+  }), [
+    editablePath,
+    patternImageData,
+    selectedMotifs,
+    textureRenderParams,
+  ]);
+  const texture = useMemo(() => {
+    const canvasTexture = new THREE.CanvasTexture(textureCanvas);
+    configureStlTextureSampling(canvasTexture, gl);
+    return canvasTexture;
+  }, [gl, textureCanvas]);
+  useEffect(() => () => texture.dispose(), [texture]);
 
   // 텍스처 반복/오프셋/회전 변환
   useEffect(() => {
-    if (texture) updatePatternTextureTransform(texture, params, geometry);
+    updatePatternTextureTransform(texture, params, geometry);
   }, [geometry, texture, params]);
-
-  // 패턴 파라미터·role·preset 변경으로 캔버스가 다시 그려지면 텍스처 갱신
-  useEffect(() => {
-    if (texture) texture.needsUpdate = true;
-  }, [patternVersion, texture]);
 
   const uvCheckerTexture = useMemo(() => createUvCheckerTexture(), []);
   useEffect(() => () => uvCheckerTexture.dispose(), [uvCheckerTexture]);
   useEffect(() => {
+    configureStlTextureSampling(uvCheckerTexture, gl);
     updatePatternTextureTransform(uvCheckerTexture, params, geometry);
-  }, [geometry, params, uvCheckerTexture]);
+  }, [geometry, gl, params, uvCheckerTexture]);
 
   // 머티리얼은 한 번 만들고 제자리 갱신 (map 유무 변화 시 재컴파일 처리 포함)
   const material = useMemo(() => createPatternMaterial(null, {}), []);
@@ -341,6 +382,9 @@ function CustomStlMockup({
 export default function MockupViewer({
   patternCanvas,
   patternVersion,
+  patternImageData,
+  editablePath,
+  selectedMotifs,
   params,
   stlUrl,
   panelCollapsed,
@@ -350,7 +394,7 @@ export default function MockupViewer({
   const [fitRequest, setFitRequest] = useState(0);
   const isCustomStl = params?.mockupMode === 'customStl';
   const meta = isCustomStl
-    ? `custom STL · ${params.stlMappingPreset} · ${params.stlProjectionAxis}`
+    ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureResolution}px`
     : 'monitor back panel';
   const actions = isCustomStl ? (
     <div className="mockup-viewer__actions" aria-label="STL 보기 조절">
@@ -398,8 +442,9 @@ export default function MockupViewer({
               {stlUrl && (
                 <CustomStlMockup
                   stlUrl={stlUrl}
-                  patternCanvas={patternCanvas}
-                  patternVersion={patternVersion}
+                  patternImageData={patternImageData}
+                  editablePath={editablePath}
+                  selectedMotifs={selectedMotifs}
                   params={params}
                   fitRequest={fitRequest}
                 />

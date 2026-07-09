@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 
 const AXIS_INDEX = { x: 0, y: 1, z: 2 };
+const MAX_TEXTURE_REPEAT = 12;
 
 /** planar 모드별 (U축, V축) 매핑 */
 const PLANAR_AXES = {
@@ -46,8 +47,8 @@ export const STL_MAPPING_PRESETS = {
     stlSwapUV: false,
     stlFlipU: false,
     stlFlipV: false,
-    stlPatternRepeatX: 3,
-    stlPatternRepeatY: 3,
+    stlPatternRepeatX: 2.5,
+    stlPatternRepeatY: 2.5,
   },
   topSurface: {
     stlMappingMode: 'planarFront',
@@ -55,8 +56,8 @@ export const STL_MAPPING_PRESETS = {
     stlSwapUV: false,
     stlFlipU: false,
     stlFlipV: false,
-    stlPatternRepeatX: 3,
-    stlPatternRepeatY: 3,
+    stlPatternRepeatX: 2.5,
+    stlPatternRepeatY: 2.5,
   },
   sideSurface: {
     stlMappingMode: 'planarFront',
@@ -64,8 +65,8 @@ export const STL_MAPPING_PRESETS = {
     stlSwapUV: false,
     stlFlipU: false,
     stlFlipV: false,
-    stlPatternRepeatX: 3,
-    stlPatternRepeatY: 3,
+    stlPatternRepeatX: 2.5,
+    stlPatternRepeatY: 2.5,
   },
   curvedCanopy: {
     stlMappingMode: 'planarFront',
@@ -73,8 +74,8 @@ export const STL_MAPPING_PRESETS = {
     stlSwapUV: true,
     stlFlipU: false,
     stlFlipV: false,
-    stlPatternRepeatX: 4.5,
-    stlPatternRepeatY: 2.4,
+    stlPatternRepeatX: 2.5,
+    stlPatternRepeatY: 2,
   },
   productBack: {
     stlMappingMode: 'planarFront',
@@ -82,8 +83,8 @@ export const STL_MAPPING_PRESETS = {
     stlSwapUV: false,
     stlFlipU: false,
     stlFlipV: false,
-    stlPatternRepeatX: 3,
-    stlPatternRepeatY: 3,
+    stlPatternRepeatX: 2.5,
+    stlPatternRepeatY: 2.5,
   },
 };
 
@@ -326,15 +327,25 @@ export function createPatternMaterial(texture = null, params = {}) {
 export function updatePatternMaterial(material, texture, params = {}) {
   if (!material) return material;
   const hadMap = Boolean(material.map);
+  const wasTransparent = material.transparent;
   material.map = texture ?? null;
-  material.color.set(params.stlBaseColor ?? '#f2f2f2');
+  material.color.set(texture ? '#ffffff' : (params.stlBaseColor ?? '#f2f2f2'));
   material.roughness = params.stlRoughness ?? 0.72;
   material.metalness = params.stlMetalness ?? 0.05;
   material.wireframe = Boolean(params.stlShowWireframe);
   const opacity = params.stlPatternOpacity ?? 1;
+  const transparentPattern = Boolean(texture)
+    && !params.stlShowUvChecker
+    && params.stlTextureBackgroundMode === 'transparentPattern';
   material.opacity = opacity;
-  material.transparent = opacity < 1;
-  if (hadMap !== Boolean(material.map)) material.needsUpdate = true;
+  material.transparent = opacity < 1 || transparentPattern;
+  material.depthWrite = !transparentPattern;
+  if (
+    hadMap !== Boolean(material.map)
+    || wasTransparent !== material.transparent
+  ) {
+    material.needsUpdate = true;
+  }
   return material;
 }
 
@@ -344,9 +355,9 @@ export function updatePatternMaterial(material, texture, params = {}) {
  */
 export function updatePatternTextureTransform(texture, params = {}, geometry = null) {
   if (!texture) return texture;
-  const scale = Math.max(0.01, params.stlPatternScale ?? 1);
-  let repeatX = (params.stlPatternRepeatX ?? 3) / scale;
-  let repeatY = (params.stlPatternRepeatY ?? 3) / scale;
+  const scale = Math.max(0.25, params.stlPatternScale ?? 1);
+  let repeatX = (params.stlPatternRepeatX ?? 2.5) / scale;
+  let repeatY = (params.stlPatternRepeatY ?? 2.5) / scale;
 
   if (params.stlAutoFitMapping && geometry) {
     geometry.computeBoundingBox();
@@ -363,6 +374,9 @@ export function updatePatternTextureTransform(texture, params = {}, geometry = n
     if (uSpan > vSpan) repeatX *= uSpan / vSpan;
     else repeatY *= vSpan / uSpan;
   }
+
+  repeatX = Math.min(MAX_TEXTURE_REPEAT, Math.max(0.1, repeatX));
+  repeatY = Math.min(MAX_TEXTURE_REPEAT, Math.max(0.1, repeatY));
 
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;

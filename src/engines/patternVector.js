@@ -508,7 +508,11 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const { editablePath, selectedMotifs = [] } = extras;
+  const {
+    editablePath,
+    selectedMotifs = [],
+    transparentBackground = false,
+  } = extras;
   const { width: cw, height: ch } = canvas;
   const palette = getPalette(params);
   const backgroundColor = (params.patternStyle === 'engrave' && params.engraveBackground)
@@ -517,8 +521,11 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, cw, ch);
+  ctx.clearRect(0, 0, cw, ch);
+  if (!transparentBackground) {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, cw, ch);
+  }
 
   const motifEntries = getMotifEntries(editablePath, selectedMotifs);
   if (!motifEntries.length) return;
