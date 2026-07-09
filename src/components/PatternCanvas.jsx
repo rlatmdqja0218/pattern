@@ -17,6 +17,8 @@ export default function PatternCanvas({
   editablePath,
   selectedMotifs = [],
   onPatternCanvasUpdate,
+  panelCollapsed,
+  onTogglePanel,
 }) {
   const canvasRef = useRef(null);
   const [containerRef, { width, height }] = useElementSize();
@@ -79,7 +81,12 @@ export default function PatternCanvas({
         : `${params.mode} · 배율 ${params.tileScale} · 간격 ${params.tileSpacing}px`;
 
   return (
-    <PreviewPanel title="2D 패턴 프리뷰" meta={meta}>
+    <PreviewPanel
+      title="2D 패턴 프리뷰"
+      meta={meta}
+      collapsed={panelCollapsed}
+      onToggleCollapsed={onTogglePanel}
+    >
       <div className="preview-panel__body" ref={containerRef}>
         {shouldShowCanvas && (
           <canvas

@@ -147,6 +147,8 @@ export default function VectorEditorCanvas({
   params = {},
   onPathChange,
   onMotifsChange,
+  panelCollapsed,
+  onTogglePanel,
 }) {
   const canvasRef = useRef(null);
   const scopeRef = useRef(null);
@@ -307,6 +309,31 @@ export default function VectorEditorCanvas({
       };
     });
     setStatus(`후보 ${index + 1} 역할: ${role}`);
+  }, [setEditorState]);
+
+  // 모든 후보 role을 primary로 되돌린다. setEditorState를 거치므로
+  // undo/redo 히스토리에 포함된다. ignore였던 후보는 다시 패턴에 포함시킨다.
+  const handleResetRoles = useCallback(() => {
+    setEditorState((currentState) => {
+      const ignoredIds = currentState.pathCandidates
+        .filter((candidate) => (
+          (currentState.candidateRoles[candidate.id] ?? 'primary') === 'ignore'
+        ))
+        .map((candidate) => candidate.id);
+      return {
+        ...currentState,
+        candidateRoles: Object.fromEntries(
+          currentState.pathCandidates.map((candidate) => [candidate.id, 'primary']),
+        ),
+        selectedCandidateIds: [
+          ...currentState.selectedCandidateIds,
+          ...ignoredIds.filter(
+            (id) => !currentState.selectedCandidateIds.includes(id),
+          ),
+        ],
+      };
+    });
+    setStatus('모든 후보 역할을 primary로 초기화');
   }, [setEditorState]);
 
   const syncZoomState = useCallback(() => {
@@ -714,6 +741,14 @@ export default function VectorEditorCanvas({
         >
           ↷
         </button>
+        <button
+          type="button"
+          onClick={handleResetRoles}
+          disabled={pathCandidates.length === 0}
+          title="모든 후보 역할을 primary로 초기화 (undo 가능)"
+        >
+          역할 초기화
+        </button>
       </div>
       <div className="vector-editor__zoom-controls" aria-label="벡터 편집 화면 조절">
         <button type="button" onClick={() => zoomBy(1.2)} title="확대">
@@ -738,6 +773,8 @@ export default function VectorEditorCanvas({
       meta={`${status} · ${zoomPercent}%`}
       className="vector-editor"
       actions={editorActions}
+      collapsed={panelCollapsed}
+      onToggleCollapsed={onTogglePanel}
     >
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">

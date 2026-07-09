@@ -6,22 +6,25 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  Group as PanelGroup,
-  Panel,
-  Separator as PanelResizeHandle,
-} from 'react-resizable-panels';
 import PatternCanvas from './components/PatternCanvas';
 import MockupViewer from './components/MockupViewer';
 import VectorEditorCanvas from './components/VectorEditorCanvas';
 import { patternControlSchema } from './state/patternDefaults';
 import { PATTERN_PRESETS } from './state/patternPresets';
+import { usePersistentLayout } from './hooks/usePersistentLayout';
+import { useSplitterDrag } from './hooks/useResizablePanels';
 import './App.css';
 
 const controlSchema = {
   image: { image: undefined, label: '이미지 업로드' },
   ...patternControlSchema,
 };
+
+// splitter 드래그 시 패널 최소 크기(px)
+const MIN_LEFT_STACK_WIDTH = 420;
+const MIN_MOCKUP_WIDTH = 360;
+const MIN_PATTERN_HEIGHT = 180;
+const MIN_VECTOR_HEIGHT = 260;
 
 function doesPresetMatchParams(preset, params) {
   return Object.entries(preset).every(([key, value]) => params[key] === value);
@@ -46,6 +49,37 @@ export default function App() {
   // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
   const [stlUrl, setStlUrl] = useState(null);
   const stlUrlRef = useRef(null);
+
+  // 워크스페이스 레이아웃: 분할 비율 + 패널 접힘 상태 (localStorage 유지)
+  const { layout, setRatio, togglePanel } = usePersistentLayout();
+  const { workspaceLeftRatio, leftStackTopRatio, collapsedPanels } = layout;
+  const patternCollapsed = collapsedPanels.pattern2d;
+  const vectorCollapsed = collapsedPanels.vectorEditor;
+  const mockupCollapsed = collapsedPanels.mockup3d;
+
+  const workspaceRef = useRef(null);
+  const leftStackRef = useRef(null);
+
+  const handleWorkspaceSplit = useSplitterDrag({
+    containerRef: workspaceRef,
+    direction: 'horizontal',
+    minStart: MIN_LEFT_STACK_WIDTH,
+    minEnd: MIN_MOCKUP_WIDTH,
+    onRatioChange: useCallback(
+      (ratio) => setRatio('workspaceLeftRatio', ratio),
+      [setRatio],
+    ),
+  });
+  const handleLeftStackSplit = useSplitterDrag({
+    containerRef: leftStackRef,
+    direction: 'vertical',
+    minStart: MIN_PATTERN_HEIGHT,
+    minEnd: MIN_VECTOR_HEIGHT,
+    onRatioChange: useCallback(
+      (ratio) => setRatio('leftStackTopRatio', ratio),
+      [setRatio],
+    ),
+  });
 
   // Leva 사이드바 컨트롤 — 이 값들이 앱의 단일 상태 소스(state)가 된다.
   // image: 업로드 시 object URL 문자열이 상태로 저장된다.
@@ -133,6 +167,41 @@ export default function App() {
     setControls({ mockupMode: 'customStl' });
   }, [setControls]);
 
+  // 접힘 상태에 따른 컬럼/셀 크기: 접힌 쪽은 최소만 남기고
+  // 나머지 패널이 flexGrow로 남은 공간을 차지한다.
+  const leftColumnStyle = mockupCollapsed
+    ? { flexGrow: 1, flexBasis: 0, minWidth: MIN_LEFT_STACK_WIDTH }
+    : {
+        flexGrow: workspaceLeftRatio,
+        flexBasis: 0,
+        minWidth: MIN_LEFT_STACK_WIDTH,
+      };
+  const rightColumnStyle = mockupCollapsed
+    ? { flex: '0 0 240px', minWidth: 0 }
+    : {
+        flexGrow: 1 - workspaceLeftRatio,
+        flexBasis: 0,
+        minWidth: MIN_MOCKUP_WIDTH,
+      };
+  const patternCellStyle = patternCollapsed
+    ? { flex: '0 0 auto' }
+    : vectorCollapsed
+      ? { flexGrow: 1, flexBasis: 0, minHeight: 0 }
+      : {
+          flexGrow: leftStackTopRatio,
+          flexBasis: 0,
+          minHeight: MIN_PATTERN_HEIGHT,
+        };
+  const vectorCellStyle = vectorCollapsed
+    ? { flex: '0 0 auto' }
+    : patternCollapsed
+      ? { flexGrow: 1, flexBasis: 0, minHeight: 0 }
+      : {
+          flexGrow: 1 - leftStackTopRatio,
+          flexBasis: 0,
+          minHeight: MIN_VECTOR_HEIGHT,
+        };
+
   return (
     <div className="app">
       <aside className="app__sidebar">
@@ -147,40 +216,65 @@ export default function App() {
           </span>
         </label>
       </aside>
-      <main className="app__previews">
-        <PanelGroup
-          orientation="vertical"
-          defaultLayout={{ pattern: 30, vector: 45, mockup: 25 }}
-          className="app__panel-group"
+      <main className="app__workspace" ref={workspaceRef}>
+        <div
+          className="workspace__column workspace__column--left"
+          ref={leftStackRef}
+          style={leftColumnStyle}
         >
-          <Panel id="pattern" defaultSize="30%" minSize="12%" className="app__panel">
+          <div className="workspace__cell" style={patternCellStyle}>
             <PatternCanvas
               imageUrl={image}
               params={params}
               editablePath={editablePath}
               selectedMotifs={selectedMotifs}
               onPatternCanvasUpdate={handlePatternCanvasUpdate}
+              panelCollapsed={patternCollapsed}
+              onTogglePanel={() => togglePanel('pattern2d')}
             />
-          </Panel>
-          <PanelResizeHandle className="app__resize-handle" />
-          <Panel id="vector" defaultSize="45%" minSize="15%" className="app__panel">
+          </div>
+          {!patternCollapsed && !vectorCollapsed && (
+            <div
+              className="workspace__splitter workspace__splitter--horizontal"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="2D 프리뷰 / 벡터 편집 크기 조절"
+              onPointerDown={handleLeftStackSplit}
+            />
+          )}
+          <div className="workspace__cell" style={vectorCellStyle}>
             <VectorEditorCanvas
               imageUrl={image}
               params={params}
               onPathChange={handlePathChange}
               onMotifsChange={handleMotifsChange}
+              panelCollapsed={vectorCollapsed}
+              onTogglePanel={() => togglePanel('vectorEditor')}
             />
-          </Panel>
-          <PanelResizeHandle className="app__resize-handle" />
-          <Panel id="mockup" defaultSize="25%" minSize="12%" className="app__panel">
-            <MockupViewer
-              patternCanvas={patternCanvas}
-              patternVersion={patternVersion}
-              params={params}
-              stlUrl={stlUrl}
-            />
-          </Panel>
-        </PanelGroup>
+          </div>
+        </div>
+        {!mockupCollapsed && (
+          <div
+            className="workspace__splitter workspace__splitter--vertical"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="작업 영역 / 3D 목업 크기 조절"
+            onPointerDown={handleWorkspaceSplit}
+          />
+        )}
+        <div
+          className="workspace__column workspace__column--right"
+          style={rightColumnStyle}
+        >
+          <MockupViewer
+            patternCanvas={patternCanvas}
+            patternVersion={patternVersion}
+            params={params}
+            stlUrl={stlUrl}
+            panelCollapsed={mockupCollapsed}
+            onTogglePanel={() => togglePanel('mockup3d')}
+          />
+        </div>
       </main>
     </div>
   );

@@ -52,43 +52,75 @@
   color: #6f7681;
 }
 
-.app__previews {
+.app__workspace {
+  display: flex;
   padding: 12px;
   background: #101317;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
-.app__panel-group {
-  width: 100%;
-  height: 100%;
+.workspace__column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
-.app__panel {
+.workspace__cell {
   display: flex;
   min-width: 0;
   min-height: 0;
 }
 
-.app__resize-handle {
-  flex: 0 0 12px;
-  position: relative;
-  background: #101317;
+.workspace__cell > .preview-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
-.app__resize-handle::before {
+/* 패널 사이 splitter — 얇게 유지, hover/드래그 시 강조 */
+.workspace__splitter {
+  position: relative;
+  flex: 0 0 8px;
+  touch-action: none;
+  user-select: none;
+  background: transparent;
+}
+
+.workspace__splitter--vertical {
+  cursor: col-resize;
+}
+
+.workspace__splitter--horizontal {
+  cursor: row-resize;
+}
+
+.workspace__splitter::before {
   content: '';
   position: absolute;
-  left: 14px;
-  right: 14px;
-  top: 5px;
-  height: 2px;
   border-radius: 999px;
   background: #2f3741;
+  transition: background 0.12s ease;
 }
 
-.app__resize-handle:hover::before,
-.app__resize-handle[data-resize-handle-active]::before {
+.workspace__splitter--vertical::before {
+  top: 14px;
+  bottom: 14px;
+  left: 3px;
+  width: 2px;
+}
+
+.workspace__splitter--horizontal::before {
+  left: 14px;
+  right: 14px;
+  top: 3px;
+  height: 2px;
+}
+
+.workspace__splitter:hover::before,
+.workspace__splitter.is-dragging::before {
   background: #2f9cff;
 }
 
@@ -375,7 +407,16 @@
     border-bottom: 1px solid #2a2f36;
   }
 
-  .app__previews {
+  .app__workspace {
     min-height: 840px;
+    flex-direction: column;
+  }
+
+  .app__workspace .workspace__column {
+    min-width: 0 !important;
+  }
+
+  .app__workspace .workspace__splitter--vertical {
+    display: none;
   }
 }

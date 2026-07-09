@@ -259,6 +259,8 @@ export default function MockupViewer({
   patternVersion,
   params,
   stlUrl,
+  panelCollapsed,
+  onTogglePanel,
 }) {
   const isCustomStl = params?.mockupMode === 'customStl';
   const meta = isCustomStl
@@ -266,8 +268,16 @@ export default function MockupViewer({
     : 'monitor back panel';
 
   return (
-    <PreviewPanel title="3D 목업 프리뷰" meta={meta}>
+    <PreviewPanel
+      title="3D 목업 프리뷰"
+      meta={meta}
+      collapsed={panelCollapsed}
+      onToggleCollapsed={onTogglePanel}
+    >
       <div className="preview-panel__body">
+        {/* 접힌 동안 R3F Canvas를 unmount해 renderer를 정지/해제하고,
+            다시 펼치면 새 패널 크기로 renderer가 재생성된다 */}
+        {!panelCollapsed && (
         <Canvas camera={{ position: [0.2, 0.25, 5.1], fov: 38 }}>
           <color attach="background" args={['#101317']} />
           {isCustomStl ? (
@@ -307,7 +317,8 @@ export default function MockupViewer({
             maxDistance={isCustomStl ? 12 : 7}
           />
         </Canvas>
-        {isCustomStl && !stlUrl && (
+        )}
+        {!panelCollapsed && isCustomStl && !stlUrl && (
           <p className="preview-panel__placeholder">STL 파일을 업로드하세요</p>
         )}
       </div>
