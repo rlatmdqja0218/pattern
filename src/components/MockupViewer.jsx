@@ -16,6 +16,7 @@ import {
   applyStlUV,
   createPatternMaterial,
   createUvCheckerTexture,
+  resolveStlMappingMode,
   updatePatternMaterial,
   updatePatternTextureTransform,
 } from '../engines/stlMapping';
@@ -434,60 +435,49 @@ function CustomStlMockup({
     invalidate();
   }, [camera, geometry, invalidate, size.height, size.width]);
 
-  useEffect(() => {
-    fitStlView();
-  }, [fitRequest, fitStlView, geometry]);
+  // fit/reset은 요청 카운터와 geometry 로드 시에만 실행한다.
+  // (fitStlView 자체는 size에 의존하므로 콜백 identity 변화가
+  //  effect를 재실행시키지 않도록 ref로 참조 — 패널 리사이즈/splitter
+  //  드래그 때마다 카메라가 다시 fit되며 뷰가 튀는 문제 방지)
+  const fitStlViewRef = useRef(fitStlView);
+  fitStlViewRef.current = fitStlView;
+  const resetStlViewRef = useRef(resetStlView);
+  resetStlViewRef.current = resetStlView;
 
   useEffect(() => {
-    if (viewResetRequest > 0) resetStlView();
-  }, [resetStlView, viewResetRequest]);
+    fitStlViewRef.current();
+  }, [fitRequest, geometry]);
 
+  useEffect(() => {
+    if (viewResetRequest > 0) resetStlViewRef.current();
+  }, [viewResetRequest]);
+
+  // 컨트롤 target 동기화는 geometry가 처음 로드될 때만 허용한다.
+  // (controlMode 전환·spacePan 토글·마우스업에서 재호출되면 뷰가 튄다.
+  //  정규화된 STL은 원점 중심이므로 모드 전환 후 새 컨트롤의 기본
+  //  target(0,0,0)이 그대로 모델 중심과 일치한다.)
   useEffect(() => {
     if (!geometry) return;
     geometry.computeBoundingSphere();
     syncControlsTarget(controlsRef.current, geometry.boundingSphere.center, true);
     invalidate();
-  }, [controlMode, geometry, invalidate]);
+  }, [geometry, invalidate]);
 
+  // ArcballControls(자유회전) 전용 마우스 매핑.
+  // Orbit 설정(damping/speed/mouseButtons)은 전부 JSX props로만 관리하고,
+  // 여기서는 setMouseAction만 적용한다 — controls.update()를 호출하지 않아
+  // 드래그 중/직후 내부 상태가 리셋되며 튀는 것을 막는다.
   useEffect(() => {
     const controls = controlsRef.current;
-    if (!controls) return;
-
-    controls.enablePan = true;
-    controls.enableRotate = true;
-    controls.enableZoom = true;
-    controls.minDistance = 0.3;
-    controls.maxDistance = 30;
-
-    if ('screenSpacePanning' in controls) controls.screenSpacePanning = true;
-    if ('enableDamping' in controls) controls.enableDamping = true;
-    if ('dampingFactor' in controls) controls.dampingFactor = 0.08;
-    if ('rotateSpeed' in controls) controls.rotateSpeed = rotateSpeed;
-    if ('panSpeed' in controls) controls.panSpeed = panSpeed;
-    if ('zoomSpeed' in controls) controls.zoomSpeed = zoomSpeed;
-
-    if (typeof controls.setMouseAction === 'function') {
-      controls.setMouseAction(spacePanActive ? 'PAN' : 'ROTATE', 0);
-      controls.setMouseAction('PAN', 0, 'SHIFT');
-      controls.setMouseAction('PAN', 2);
-      controls.setMouseAction('ZOOM', 'WHEEL');
-      controls.setMouseAction('ZOOM', 1);
-      controls.scaleFactor = 1 + (zoomSpeed * 0.08);
-      controls.wMax = 12 + (rotateSpeed * 8);
-      controls.dampingFactor = 18 + ((3 - rotateSpeed) * 3);
-      controls.cursorZoom = false;
-    }
-
-    if (typeof controls.update === 'function') controls.update();
+    if (!controls || typeof controls.setMouseAction !== 'function') return;
+    controls.setMouseAction(spacePanActive ? 'PAN' : 'ROTATE', 0);
+    controls.setMouseAction('PAN', 0, 'SHIFT');
+    controls.setMouseAction('PAN', 2);
+    controls.setMouseAction('ZOOM', 'WHEEL');
+    controls.setMouseAction('ZOOM', 1);
+    controls.cursorZoom = false;
     invalidate();
-  }, [
-    controlMode,
-    invalidate,
-    panSpeed,
-    rotateSpeed,
-    spacePanActive,
-    zoomSpeed,
-  ]);
+  }, [controlMode, invalidate, spacePanActive]);
 
   useEffect(() => {
     if (!camera.isPerspectiveCamera) return;
@@ -500,19 +490,19 @@ function CustomStlMockup({
     <>
       {geometry && <mesh geometry={geometry} material={material} />}
       {controlMode === 'freeRotate' ? (
+        /* enableAnimations를 끄면 mouseup 후 관성/보정 애니메이션이 사라져
+           사용자가 드래그한 마지막 카메라 상태가 그대로 유지된다 */
         <ArcballControls
           ref={controlsRef}
           enablePan
           enableRotate
           enableZoom
-          enableAnimations
+          enableAnimations={false}
           enableGrid={false}
           cursorZoom={false}
           minDistance={0.3}
           maxDistance={30}
           scaleFactor={1 + (zoomSpeed * 0.08)}
-          wMax={12 + (rotateSpeed * 8)}
-          dampingFactor={18 + ((3 - rotateSpeed) * 3)}
         />
       ) : (
         <OrbitControls
@@ -559,8 +549,28 @@ export default function MockupViewer({
   const [spacePanActive, setSpacePanActive] = useState(false);
   const isCustomStl = params?.mockupMode === 'customStl';
   const canControlStlView = isCustomStl && !panelCollapsed && Boolean(stlUrl);
+  // 현재 매핑 상태를 한 줄로 진단: 프리셋 · 투사 축 · (특수 매핑 모드) ·
+  // 텍스처 방식 · 해상도 · UV swap/flip/체커 플래그
+  const stlUvFlags = [
+    params?.stlSwapUV && 'swapUV',
+    params?.stlFlipU && 'flipU',
+    params?.stlFlipV && 'flipV',
+    params?.stlShowUvChecker && 'UV체크',
+  ].filter(Boolean).join('·');
+  const stlMappingModeLabel = params?.stlMappingMode
+    && params.stlMappingMode !== 'planarFront'
+    ? resolveStlMappingMode(params.stlMappingMode).label
+    : null;
   const meta = isCustomStl
-    ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureMappingMode} · ${params.stlTextureResolution}px`
+    ? [
+        'custom STL',
+        params.stlMappingPreset,
+        params.stlProjectionAxis,
+        stlMappingModeLabel,
+        params.stlTextureMappingMode,
+        `${params.stlTextureResolution}px`,
+        stlUvFlags || null,
+      ].filter(Boolean).join(' · ')
     : 'monitor back panel';
   const activeStlControlMode = params.stlControlMode ?? 'freeRotate';
 

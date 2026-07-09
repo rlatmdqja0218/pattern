@@ -147,7 +147,9 @@ function hasSelectedMotifPaths(selectedMotifs) {
 }
 
 function normalizeRole(role) {
-  return ['primary', 'secondary', 'accent'].includes(role) ? role : 'accent';
+  // 알 수 없는/누락된 role은 primary로 취급한다.
+  // secondary/accent는 사용자가 명시적으로 선택했을 때만 적용된다.
+  return ['primary', 'secondary', 'accent'].includes(role) ? role : 'primary';
 }
 
 function hexToRgb(hexColor) {
