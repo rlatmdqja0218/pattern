@@ -1,6 +1,8 @@
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -21,6 +23,7 @@ import {
   updatePatternTextureTransform,
 } from '../engines/stlMapping';
 import { createStlPatternTextureCanvas } from '../engines/stlPatternTexture';
+import { downloadCanvasAsPng } from '../utils/downloadCanvas';
 
 const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternScaleX: 1,
@@ -164,6 +167,21 @@ function getStlMappingMeta(params = {}) {
     `${params.stlTextureResolution ?? 2048}px`,
     ...flags,
   ].join(' · ');
+}
+
+function MockupCaptureBridge({ captureRef }) {
+  const { gl, scene, camera } = useThree();
+
+  useEffect(() => {
+    captureRef.current = { gl, scene, camera };
+    return () => {
+      if (captureRef.current?.gl === gl) {
+        captureRef.current = null;
+      }
+    };
+  }, [camera, captureRef, gl, scene]);
+
+  return null;
 }
 
 /**
@@ -595,7 +613,7 @@ function CustomStlMockup({
  * 3D Mockup 프리뷰 (three.js + @react-three/fiber 기반).
  * mockupMode: 'monitor'(기존 모니터 후면 패널) | 'customStl'(업로드 STL)
  */
-export default function MockupViewer({
+const MockupViewer = forwardRef(function MockupViewer({
   patternCanvas,
   patternVersion,
   patternImageData,
@@ -607,17 +625,30 @@ export default function MockupViewer({
   onTogglePanel,
   onResetStlMapping,
   onSetStlControlMode,
-}) {
+}, ref) {
   const [fitRequest, setFitRequest] = useState(0);
   const [viewResetRequest, setViewResetRequest] = useState(0);
   const [isStlPanelHovered, setIsStlPanelHovered] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
+  const captureRef = useRef(null);
   const isCustomStl = params?.mockupMode === 'customStl';
   const canControlStlView = isCustomStl && !panelCollapsed && Boolean(stlUrl);
   const meta = isCustomStl
     ? getStlMappingMeta(params)
     : 'monitor back panel';
   const activeStlControlMode = params.stlControlMode ?? 'freeRotate';
+
+  const downloadPng = useCallback(() => {
+    if (panelCollapsed || !captureRef.current) return false;
+    const { gl, scene, camera } = captureRef.current;
+    gl.render(scene, camera);
+    return downloadCanvasAsPng(gl.domElement, 'pattern-3d-mockup.png');
+  }, [panelCollapsed]);
+
+  useImperativeHandle(ref, () => ({
+    downloadPng,
+    hasCanvas: () => !panelCollapsed && Boolean(captureRef.current),
+  }), [downloadPng, panelCollapsed]);
 
   useEffect(() => {
     if (!canControlStlView || !isStlPanelHovered) {
@@ -732,7 +763,11 @@ export default function MockupViewer({
         {/* 접힌 동안 R3F Canvas를 unmount해 renderer를 정지/해제하고,
             다시 펼치면 새 패널 크기로 renderer가 재생성된다 */}
         {!panelCollapsed && (
-        <Canvas camera={{ position: [0.2, 0.25, 5.1], fov: 38 }}>
+        <Canvas
+          camera={{ position: [0.2, 0.25, 5.1], fov: 38 }}
+          gl={{ preserveDrawingBuffer: true }}
+        >
+          <MockupCaptureBridge captureRef={captureRef} />
           <color attach="background" args={['#101317']} />
           {isCustomStl ? (
             <>
@@ -784,4 +819,6 @@ export default function MockupViewer({
       </div>
     </PreviewPanel>
   );
-}
+});
+
+export default MockupViewer;

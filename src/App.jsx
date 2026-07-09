@@ -9,6 +9,7 @@ import {
 import PatternCanvas from './components/PatternCanvas';
 import MockupViewer from './components/MockupViewer';
 import VectorEditorCanvas from './components/VectorEditorCanvas';
+import DownloadMenu from './components/DownloadMenu';
 import { patternControlSchema } from './state/patternDefaults';
 import { PATTERN_PRESETS } from './state/patternPresets';
 import { getStlMappingPresetValues } from './engines/stlMapping';
@@ -52,6 +53,7 @@ export default function App() {
   // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
   const [stlUrl, setStlUrl] = useState(null);
   const stlUrlRef = useRef(null);
+  const mockupViewerRef = useRef(null);
 
   // 워크스페이스 레이아웃: 분할 비율 + 패널 접힘 상태 (localStorage 유지)
   const { layout, setRatio, togglePanel } = usePersistentLayout();
@@ -242,8 +244,22 @@ export default function App() {
   return (
     <div className="app">
       <aside className="app__sidebar">
-        <h1 className="app__title">패턴 제너레이터</h1>
-        <p className="app__subtitle">이미지 기반 패턴 생성 & 3D 목업</p>
+        <div className="app__sidebar-header">
+          <div className="app__sidebar-heading">
+            <h1 className="app__title">패턴 제너레이터</h1>
+            <p className="app__subtitle">이미지 기반 패턴 생성 & 3D 목업</p>
+          </div>
+          <DownloadMenu
+            patternCanvas={patternCanvas}
+            onDownloadMockup={() => mockupViewerRef.current?.downloadPng()}
+            canDownloadMockup={!mockupCollapsed}
+            params={params}
+            editablePath={editablePath}
+            selectedMotifs={selectedMotifs}
+            patternImageData={patternImageData}
+            stlUrl={stlUrl}
+          />
+        </div>
         <section className="app__upload-section" aria-label="업로드">
           <label className="app__upload-card">
             <span className="app__upload-title">이미지 업로드</span>
@@ -316,6 +332,7 @@ export default function App() {
           style={rightColumnStyle}
         >
           <MockupViewer
+            ref={mockupViewerRef}
             patternCanvas={patternCanvas}
             patternVersion={patternVersion}
             patternImageData={patternImageData}
