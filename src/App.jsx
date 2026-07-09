@@ -17,7 +17,6 @@ import { useSplitterDrag } from './hooks/useResizablePanels';
 import './App.css';
 
 const controlSchema = {
-  image: { image: undefined, label: '이미지 업로드' },
   ...patternControlSchema,
 };
 
@@ -47,6 +46,9 @@ export default function App() {
   const [patternCanvas, setPatternCanvas] = useState(null);
   const [patternVersion, setPatternVersion] = useState(0);
   const [patternImageData, setPatternImageData] = useState(null);
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageFileName, setImageFileName] = useState('');
+  const imageUrlRef = useRef(null);
   // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
   const [stlUrl, setStlUrl] = useState(null);
   const stlUrlRef = useRef(null);
@@ -89,7 +91,7 @@ export default function App() {
     () => controlSchema,
     { store },
   );
-  const { image, ...rawParams } = controlValues;
+  const rawParams = controlValues;
   const paramsKey = JSON.stringify(rawParams);
   const params = useMemo(() => JSON.parse(paramsKey), [paramsKey]);
 
@@ -168,6 +170,16 @@ export default function App() {
     setPatternImageData(imageData);
   }, []);
 
+  const handleImageUpload = useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    const url = URL.createObjectURL(file);
+    imageUrlRef.current = url;
+    setImageUrl(url);
+    setImageFileName(file.name);
+  }, []);
+
   const handleStlUpload = useCallback((event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -186,6 +198,11 @@ export default function App() {
   const handleSetStlControlMode = useCallback((stlControlMode) => {
     setControls({ stlControlMode });
   }, [setControls]);
+
+  useEffect(() => () => {
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    if (stlUrlRef.current) URL.revokeObjectURL(stlUrlRef.current);
+  }, []);
 
   // 접힘 상태에 따른 컬럼/셀 크기: 접힌 쪽은 최소만 남기고
   // 나머지 패널이 flexGrow로 남은 공간을 차지한다.
@@ -227,14 +244,25 @@ export default function App() {
       <aside className="app__sidebar">
         <h1 className="app__title">패턴 제너레이터</h1>
         <p className="app__subtitle">이미지 기반 패턴 생성 & 3D 목업</p>
-        <LevaPanel store={store} fill flat titleBar={false} />
-        <label className="app__stl-upload">
-          <span>STL 모델 업로드</span>
-          <input type="file" accept=".stl" onChange={handleStlUpload} />
-          <span className="app__stl-upload-hint">
-            {stlUrl ? 'STL 로드됨 · customStl 모드' : '.stl 파일 선택'}
-          </span>
-        </label>
+        <section className="app__upload-section" aria-label="업로드">
+          <label className="app__upload-card">
+            <span className="app__upload-title">이미지 업로드</span>
+            <input type="file" accept="image/*" onChange={handleImageUpload} />
+            <span className="app__upload-hint">
+              {imageUrl ? imageFileName || '이미지 로드됨' : '패턴 기준 이미지 선택'}
+            </span>
+          </label>
+          <label className="app__upload-card">
+            <span className="app__upload-title">STL 모델 업로드</span>
+            <input type="file" accept=".stl" onChange={handleStlUpload} />
+            <span className="app__upload-hint">
+              {stlUrl ? 'STL 로드됨 · customStl 모드' : '.stl 파일 선택'}
+            </span>
+          </label>
+        </section>
+        <div className="app__controls-section">
+          <LevaPanel store={store} fill flat titleBar={false} />
+        </div>
       </aside>
       <main className="app__workspace" ref={workspaceRef}>
         <div
@@ -244,7 +272,7 @@ export default function App() {
         >
           <div className="workspace__cell" style={patternCellStyle}>
             <PatternCanvas
-              imageUrl={image}
+              imageUrl={imageUrl}
               params={params}
               editablePath={editablePath}
               selectedMotifs={selectedMotifs}
@@ -265,7 +293,7 @@ export default function App() {
           )}
           <div className="workspace__cell" style={vectorCellStyle}>
             <VectorEditorCanvas
-              imageUrl={image}
+              imageUrl={imageUrl}
               params={params}
               onPathChange={handlePathChange}
               onMotifsChange={handleMotifsChange}

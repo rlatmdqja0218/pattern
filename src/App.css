@@ -29,27 +29,44 @@
   color: #8a919c;
 }
 
-.app__stl-upload {
+.app__upload-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
+  gap: 8px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid #2a2f36;
+}
+
+.app__upload-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px;
   border: 1px dashed #3a414b;
   border-radius: 6px;
+  background: #15191f;
   font-size: 12px;
   color: #c9ced6;
   cursor: pointer;
 }
 
-.app__stl-upload input[type='file'] {
+.app__upload-card input[type='file'] {
   font-size: 11px;
   color: #8a919c;
 }
 
-.app__stl-upload-hint {
+.app__upload-title {
+  font-weight: 700;
+  color: #e4e8ef;
+}
+
+.app__upload-hint {
   font-size: 11px;
   color: #6f7681;
+}
+
+.app__controls-section {
+  min-height: 0;
 }
 
 .app__workspace {
