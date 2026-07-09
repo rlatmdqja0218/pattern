@@ -293,7 +293,7 @@ function CustomStlMockup({
   ]);
   const mappingOptionsRef = useRef(mappingOptions);
   mappingOptionsRef.current = mappingOptions;
-  const controlMode = params.stlControlMode ?? 'orbit';
+  const controlMode = params.stlControlMode ?? 'freeRotate';
   const panSpeed = clampControlSpeed(params.stlPanSpeed);
   const rotateSpeed = clampControlSpeed(params.stlRotateSpeed);
   const zoomSpeed = clampControlSpeed(params.stlZoomSpeed);
