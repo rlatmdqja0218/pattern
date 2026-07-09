@@ -204,6 +204,7 @@
   justify-content: flex-end;
   min-width: 0;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .preview-panel__meta {
@@ -218,6 +219,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .mockup-viewer__mode-switch {
@@ -230,14 +233,15 @@
 
 .mockup-viewer__actions button {
   height: 24px;
-  padding: 0 8px;
+  padding: 0 7px;
   border: 1px solid #303842;
   border-radius: 5px;
   background: #1d232a;
   color: #aeb8c6;
   font: inherit;
-  font-size: 11px;
+  font-size: 10.5px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .mockup-viewer__mode-switch button {

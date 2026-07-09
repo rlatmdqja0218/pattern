@@ -97,7 +97,7 @@ function getDefaultCandidateRole() {
 
 function createDefaultCandidateRoles(candidates) {
   return Object.fromEntries(
-    candidates.map((candidate, index) => [candidate.id, getDefaultCandidateRole(index)]),
+    candidates.map((candidate) => [candidate.id, getDefaultCandidateRole()]),
   );
 }
 
@@ -266,7 +266,7 @@ export default function VectorEditorCanvas({
 
   const handleCandidateToggle = useCallback((event, candidate, index) => {
     event.stopPropagation();
-    const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole(index);
+    const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole();
     setEditorState((currentState) => {
       const isSelected = currentState.selectedCandidateIds.includes(candidate.id);
       return {
@@ -274,7 +274,7 @@ export default function VectorEditorCanvas({
         candidateRoles: role === 'ignore'
           ? {
             ...currentState.candidateRoles,
-            [candidate.id]: getDefaultCandidateRole(index),
+            [candidate.id]: getDefaultCandidateRole(),
           }
           : currentState.candidateRoles,
         selectedCandidateIds: role === 'ignore'
@@ -779,7 +779,7 @@ export default function VectorEditorCanvas({
       {pathCandidates.length > 0 && (
         <div className="vector-editor__candidates" aria-label="윤곽 후보 선택">
           {pathCandidates.map((candidate, index) => {
-            const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole(index);
+            const role = candidateRoles[candidate.id] ?? getDefaultCandidateRole();
             const isSelected = role !== 'ignore' && selectedCandidateIds.includes(candidate.id);
             const isEditing = candidate.id === editingCandidateId;
             const className = [

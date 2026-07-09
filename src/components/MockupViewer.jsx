@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ArcballControls, OrbitControls } from '@react-three/drei';
+import { OrbitControls, TrackballControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -85,6 +85,21 @@ function getOrbitMouseButtons(controlMode, spacePanActive) {
   };
 }
 
+function getTrackballMouseButtons(spacePanActive) {
+  if (spacePanActive) {
+    return {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
+  }
+  return {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  };
+}
+
 function getStlTextureRenderParams(params) {
   const isBakedSurface = (params.stlTextureMappingMode ?? 'bakedSurface') === 'bakedSurface';
   return Object.fromEntries(
@@ -128,6 +143,27 @@ function applyTextureSettings(texture, params = {}) {
   texture.center.set(0.5, 0.5);
   texture.rotation = mockupPatternRotation;
   texture.needsUpdate = true;
+}
+
+function getStlMappingMeta(params = {}) {
+  const mappingMode = params.stlMappingMode ?? 'planarFront';
+  const { label: mappingLabel } = resolveStlMappingMode(mappingMode);
+  const flags = [
+    params.stlSwapUV ? 'swapUV' : null,
+    params.stlFlipU ? 'flipU' : null,
+    params.stlFlipV ? 'flipV' : null,
+    params.stlShowUvChecker ? 'UV checker' : null,
+  ].filter(Boolean);
+
+  return [
+    'custom STL',
+    params.stlMappingPreset ?? 'frontPanel',
+    params.stlProjectionAxis ?? 'xy',
+    mappingLabel,
+    params.stlTextureMappingMode ?? 'bakedSurface',
+    `${params.stlTextureResolution ?? 2048}px`,
+    ...flags,
+  ].join(' · ');
 }
 
 /**
@@ -302,6 +338,10 @@ function CustomStlMockup({
     () => getOrbitMouseButtons(controlMode, spacePanActive),
     [controlMode, spacePanActive],
   );
+  const trackballMouseButtons = useMemo(
+    () => getTrackballMouseButtons(spacePanActive),
+    [spacePanActive],
+  );
 
   // STL 로드 → 노멀/센터/스케일 정규화 → 초기 UV 생성
   useEffect(() => {
@@ -463,21 +503,46 @@ function CustomStlMockup({
     invalidate();
   }, [geometry, invalidate]);
 
-  // ArcballControls(자유회전) 전용 마우스 매핑.
-  // Orbit 설정(damping/speed/mouseButtons)은 전부 JSX props로만 관리하고,
-  // 여기서는 setMouseAction만 적용한다 — controls.update()를 호출하지 않아
-  // 드래그 중/직후 내부 상태가 리셋되며 튀는 것을 막는다.
+  // Orbit/Trackball 컨트롤 설정은 모드별로 분리한다.
+  // ArcballControls의 setMouseAction 계열 설정은 mouseup 후 뷰 튐을
+  // 만들 수 있어 freeRotate에서는 Trackball 전용 옵션만 적용한다.
   useEffect(() => {
     const controls = controlsRef.current;
-    if (!controls || typeof controls.setMouseAction !== 'function') return;
-    controls.setMouseAction(spacePanActive ? 'PAN' : 'ROTATE', 0);
-    controls.setMouseAction('PAN', 0, 'SHIFT');
-    controls.setMouseAction('PAN', 2);
-    controls.setMouseAction('ZOOM', 'WHEEL');
-    controls.setMouseAction('ZOOM', 1);
-    controls.cursorZoom = false;
+    if (!controls) return;
+
+    controls.minDistance = 0.3;
+    controls.maxDistance = 30;
+    if ('rotateSpeed' in controls) controls.rotateSpeed = rotateSpeed;
+    if ('panSpeed' in controls) controls.panSpeed = panSpeed;
+    if ('zoomSpeed' in controls) controls.zoomSpeed = zoomSpeed;
+
+    if (controlMode === 'freeRotate') {
+      if ('noPan' in controls) controls.noPan = false;
+      if ('noRotate' in controls) controls.noRotate = false;
+      if ('noZoom' in controls) controls.noZoom = false;
+      if ('staticMoving' in controls) controls.staticMoving = true;
+      if ('dynamicDampingFactor' in controls) controls.dynamicDampingFactor = 0.12;
+      if ('mouseButtons' in controls) controls.mouseButtons = trackballMouseButtons;
+    } else {
+      if ('enablePan' in controls) controls.enablePan = true;
+      if ('enableRotate' in controls) controls.enableRotate = true;
+      if ('enableZoom' in controls) controls.enableZoom = true;
+      if ('screenSpacePanning' in controls) controls.screenSpacePanning = true;
+      if ('enableDamping' in controls) controls.enableDamping = true;
+      if ('dampingFactor' in controls) controls.dampingFactor = 0.08;
+    }
+
+    if (typeof controls.update === 'function') controls.update();
     invalidate();
-  }, [controlMode, invalidate, spacePanActive]);
+  }, [
+    controlMode,
+    invalidate,
+    panSpeed,
+    rotateSpeed,
+    spacePanActive,
+    trackballMouseButtons,
+    zoomSpeed,
+  ]);
 
   useEffect(() => {
     if (!camera.isPerspectiveCamera) return;
@@ -490,19 +555,19 @@ function CustomStlMockup({
     <>
       {geometry && <mesh geometry={geometry} material={material} />}
       {controlMode === 'freeRotate' ? (
-        /* enableAnimations를 끄면 mouseup 후 관성/보정 애니메이션이 사라져
-           사용자가 드래그한 마지막 카메라 상태가 그대로 유지된다 */
-        <ArcballControls
+        <TrackballControls
           ref={controlsRef}
-          enablePan
-          enableRotate
-          enableZoom
-          enableAnimations={false}
-          enableGrid={false}
-          cursorZoom={false}
+          noPan={false}
+          noZoom={false}
+          noRotate={false}
+          staticMoving
+          dynamicDampingFactor={0.12}
+          rotateSpeed={rotateSpeed}
+          panSpeed={panSpeed}
+          zoomSpeed={zoomSpeed}
           minDistance={0.3}
           maxDistance={30}
-          scaleFactor={1 + (zoomSpeed * 0.08)}
+          mouseButtons={trackballMouseButtons}
         />
       ) : (
         <OrbitControls
@@ -549,28 +614,8 @@ export default function MockupViewer({
   const [spacePanActive, setSpacePanActive] = useState(false);
   const isCustomStl = params?.mockupMode === 'customStl';
   const canControlStlView = isCustomStl && !panelCollapsed && Boolean(stlUrl);
-  // 현재 매핑 상태를 한 줄로 진단: 프리셋 · 투사 축 · (특수 매핑 모드) ·
-  // 텍스처 방식 · 해상도 · UV swap/flip/체커 플래그
-  const stlUvFlags = [
-    params?.stlSwapUV && 'swapUV',
-    params?.stlFlipU && 'flipU',
-    params?.stlFlipV && 'flipV',
-    params?.stlShowUvChecker && 'UV체크',
-  ].filter(Boolean).join('·');
-  const stlMappingModeLabel = params?.stlMappingMode
-    && params.stlMappingMode !== 'planarFront'
-    ? resolveStlMappingMode(params.stlMappingMode).label
-    : null;
   const meta = isCustomStl
-    ? [
-        'custom STL',
-        params.stlMappingPreset,
-        params.stlProjectionAxis,
-        stlMappingModeLabel,
-        params.stlTextureMappingMode,
-        `${params.stlTextureResolution}px`,
-        stlUvFlags || null,
-      ].filter(Boolean).join(' · ')
+    ? getStlMappingMeta(params)
     : 'monitor back panel';
   const activeStlControlMode = params.stlControlMode ?? 'freeRotate';
 
