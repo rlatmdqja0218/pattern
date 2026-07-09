@@ -11,6 +11,9 @@ const isTiling = (get) => ['standard', 'mirror'].includes(get('mode'));
 const isVector = (get) => get('mode') === 'vector';
 const isMonitorMockup = (get) => get('mockupMode') === 'monitor';
 const isCustomStl = (get) => get('mockupMode') === 'customStl';
+const isCustomStlTileRepeat = (get) => (
+  isCustomStl(get) && get('stlTextureMappingMode') === 'tileRepeat'
+);
 
 /** Leva useControls에 그대로 전달하는 스키마 */
 export const patternControlSchema = {
@@ -349,7 +352,7 @@ export const patternControlSchema = {
   },
   stlAutoFitMapping: {
     value: true,
-    label: '매핑 자동 맞춤', render: isCustomStl,
+    label: '매핑 자동 맞춤', render: isCustomStlTileRepeat,
   },
   stlShowUvChecker: {
     value: false,
@@ -364,6 +367,11 @@ export const patternControlSchema = {
     value: 'solidBase',
     options: ['solidBase', 'transparentPattern'],
     label: 'STL 텍스처 배경', render: isCustomStl,
+  },
+  stlTextureMappingMode: {
+    value: 'bakedSurface',
+    options: ['bakedSurface', 'tileRepeat'],
+    label: 'STL 텍스처 방식', render: isCustomStl,
   },
   stlPatternScale: {
     value: 1, min: 0.1, max: 10, step: 0.05,
@@ -383,11 +391,11 @@ export const patternControlSchema = {
   },
   stlPatternRepeatX: {
     value: 2.5, min: 0.2, max: 12, step: 0.1,
-    label: 'STL 반복 X', render: isCustomStl,
+    label: 'STL 패턴 밀도 X', render: isCustomStl,
   },
   stlPatternRepeatY: {
     value: 2.5, min: 0.2, max: 12, step: 0.1,
-    label: 'STL 반복 Y', render: isCustomStl,
+    label: 'STL 패턴 밀도 Y', render: isCustomStl,
   },
   stlBaseColor: {
     value: '#f2f2f2',

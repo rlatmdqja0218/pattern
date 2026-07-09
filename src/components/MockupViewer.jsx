@@ -32,13 +32,22 @@ const DEFAULT_MOCKUP_PARAMS = {
 const STL_TEXTURE_PARAM_KEYS = new Set([
   'stlTextureResolution',
   'stlTextureBackgroundMode',
+  'stlTextureMappingMode',
   'stlBaseColor',
+]);
+const BAKED_STL_TEXTURE_PARAM_KEYS = new Set([
+  'stlPatternScale',
+  'stlPatternRepeatX',
+  'stlPatternRepeatY',
 ]);
 
 function getStlTextureRenderParams(params) {
+  const isBakedSurface = (params.stlTextureMappingMode ?? 'bakedSurface') === 'bakedSurface';
   return Object.fromEntries(
     Object.entries(params).filter(([key]) => (
-      !key.startsWith('stl') || STL_TEXTURE_PARAM_KEYS.has(key)
+      !key.startsWith('stl')
+      || STL_TEXTURE_PARAM_KEYS.has(key)
+      || (isBakedSurface && BAKED_STL_TEXTURE_PARAM_KEYS.has(key))
     )),
   );
 }
@@ -394,7 +403,7 @@ export default function MockupViewer({
   const [fitRequest, setFitRequest] = useState(0);
   const isCustomStl = params?.mockupMode === 'customStl';
   const meta = isCustomStl
-    ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureResolution}px`
+    ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureMappingMode} · ${params.stlTextureResolution}px`
     : 'monitor back panel';
   const actions = isCustomStl ? (
     <div className="mockup-viewer__actions" aria-label="STL 보기 조절">

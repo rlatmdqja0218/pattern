@@ -355,6 +355,19 @@ export function updatePatternMaterial(material, texture, params = {}) {
  */
 export function updatePatternTextureTransform(texture, params = {}, geometry = null) {
   if (!texture) return texture;
+  const textureMappingMode = params.stlTextureMappingMode ?? 'bakedSurface';
+
+  if (textureMappingMode === 'bakedSurface' && !params.stlShowUvChecker) {
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(1, 1);
+    texture.offset.set(0, 0);
+    texture.center.set(0.5, 0.5);
+    texture.rotation = 0;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
   const scale = Math.max(0.25, params.stlPatternScale ?? 1);
   let repeatX = (params.stlPatternRepeatX ?? 2.5) / scale;
   let repeatY = (params.stlPatternRepeatY ?? 2.5) / scale;
