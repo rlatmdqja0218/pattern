@@ -15,6 +15,7 @@ import PreviewPanel from './PreviewPanel';
 import {
   normalizeStlGeometry,
   getPerspectiveFitDistance,
+  getStlProjectionAspect,
   applyStlUV,
   createPatternMaterial,
   createUvCheckerTexture,
@@ -38,6 +39,8 @@ const STL_TEXTURE_PARAM_KEYS = new Set([
   'stlTextureResolution',
   'stlTextureBackgroundMode',
   'stlTextureMappingMode',
+  'stlTextureAspectMode',
+  'stlPreservePatternAspect',
   'stlBaseColor',
 ]);
 const BAKED_STL_TEXTURE_PARAM_KEYS = new Set([
@@ -324,6 +327,7 @@ function CustomStlMockup({
   fitRequest,
   viewResetRequest,
   spacePanActive,
+  onSurfaceAspectChange,
 }) {
   const [geometry, setGeometry] = useState(null);
   const controlsRef = useRef(null);
@@ -397,6 +401,14 @@ function CustomStlMockup({
     if (geometry) applyStlUV(geometry, mappingOptions);
   }, [geometry, mappingOptions]);
 
+  const stlSurfaceAspect = useMemo(() => (
+    geometry ? getStlProjectionAspect(geometry, mappingOptions).aspect : 1
+  ), [geometry, mappingOptions]);
+
+  useEffect(() => {
+    onSurfaceAspectChange?.(stlSurfaceAspect);
+  }, [onSurfaceAspectChange, stlSurfaceAspect]);
+
   const textureParamsKey = JSON.stringify(getStlTextureRenderParams(params));
   const textureRenderParams = useMemo(
     () => JSON.parse(textureParamsKey),
@@ -409,10 +421,12 @@ function CustomStlMockup({
     imageData: patternImageData,
     width: textureRenderParams.stlTextureResolution,
     height: textureRenderParams.stlTextureResolution,
+    surfaceAspect: stlSurfaceAspect,
   }), [
     editablePath,
     patternImageData,
     selectedMotifs,
+    stlSurfaceAspect,
     textureRenderParams,
   ]);
   const texture = useMemo(() => {
@@ -625,6 +639,7 @@ const MockupViewer = forwardRef(function MockupViewer({
   onTogglePanel,
   onResetStlMapping,
   onSetStlControlMode,
+  onStlSurfaceAspectChange,
 }, ref) {
   const [fitRequest, setFitRequest] = useState(0);
   const [viewResetRequest, setViewResetRequest] = useState(0);
@@ -637,6 +652,10 @@ const MockupViewer = forwardRef(function MockupViewer({
     ? getStlMappingMeta(params)
     : 'monitor back panel';
   const activeStlControlMode = params.stlControlMode ?? 'freeRotate';
+
+  useEffect(() => {
+    if (!isCustomStl || !stlUrl) onStlSurfaceAspectChange?.(1);
+  }, [isCustomStl, onStlSurfaceAspectChange, stlUrl]);
 
   const downloadPng = useCallback(() => {
     if (panelCollapsed || !captureRef.current) return false;
@@ -786,6 +805,7 @@ const MockupViewer = forwardRef(function MockupViewer({
                   fitRequest={fitRequest}
                   viewResetRequest={viewResetRequest}
                   spacePanActive={spacePanActive}
+                  onSurfaceAspectChange={onStlSurfaceAspectChange}
                 />
               )}
             </>

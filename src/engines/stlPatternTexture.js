@@ -2,6 +2,8 @@ import { PATTERN_RENDERERS } from './index';
 
 const DEFAULT_TEXTURE_SIZE = 2048;
 const DEFAULT_STL_DENSITY = 2.5;
+const MIN_TEXTURE_DIMENSION = 512;
+const MAX_TEXTURE_DIMENSION = 4096;
 const SUPPORTED_TEXTURE_SIZES = new Set([1024, 2048, 4096]);
 const PIXEL_SCALED_PARAM_KEYS = [
   'dotSpacing',
@@ -22,10 +24,28 @@ function normalizeTextureSize(value) {
     : DEFAULT_TEXTURE_SIZE;
 }
 
+function normalizeCanvasDimension(value, fallback = DEFAULT_TEXTURE_SIZE) {
+  const numericValue = Number(value);
+  const safeValue = Number.isFinite(numericValue) && numericValue > 0
+    ? numericValue
+    : fallback;
+  const clampedValue = Math.min(
+    MAX_TEXTURE_DIMENSION,
+    Math.max(MIN_TEXTURE_DIMENSION, safeValue),
+  );
+  return Math.max(1, Math.round(clampedValue / 2) * 2);
+}
+
 function clampDensity(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return DEFAULT_STL_DENSITY;
   return Math.min(12, Math.max(0.2, numericValue));
+}
+
+function clampSurfaceAspect(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 1;
+  return Math.min(8, Math.max(0.125, numericValue));
 }
 
 function getTextureMappingMode(params = {}) {
@@ -42,7 +62,41 @@ function getBakedDensity(params = {}) {
   };
 }
 
-function scalePatternParams(params, resolution) {
+function getTextureCanvasSize({
+  params = {},
+  width,
+  height,
+  surfaceAspect = 1,
+}) {
+  const baseResolution = normalizeTextureSize(params?.stlTextureResolution);
+  const mappingMode = getTextureMappingMode(params);
+  const aspectMode = params?.stlTextureAspectMode ?? 'preserveMotif';
+  const shouldMatchSurface = params?.stlPreservePatternAspect !== false
+    && mappingMode === 'bakedSurface'
+    && aspectMode !== 'square';
+
+  if (!shouldMatchSurface) {
+    const resolvedWidth = normalizeCanvasDimension(width ?? baseResolution, baseResolution);
+    const resolvedHeight = normalizeCanvasDimension(height ?? baseResolution, baseResolution);
+    return { width: resolvedWidth, height: resolvedHeight };
+  }
+
+  const aspect = clampSurfaceAspect(surfaceAspect);
+  if (aspect >= 1) {
+    return {
+      width: normalizeCanvasDimension(baseResolution, baseResolution),
+      height: normalizeCanvasDimension(baseResolution / aspect, baseResolution),
+    };
+  }
+
+  return {
+    width: normalizeCanvasDimension(baseResolution * aspect, baseResolution),
+    height: normalizeCanvasDimension(baseResolution, baseResolution),
+  };
+}
+
+function scalePatternParams(params, referenceResolution) {
+  const resolution = Math.max(1, referenceResolution);
   const resolutionScale = resolution / DEFAULT_TEXTURE_SIZE;
   const mappingMode = getTextureMappingMode(params);
   const isBakedSurface = mappingMode === 'bakedSurface';
@@ -79,11 +133,17 @@ export function createStlPatternTextureCanvas({
   imageData = null,
   width,
   height,
+  surfaceAspect = 1,
 }) {
-  const resolution = normalizeTextureSize(params?.stlTextureResolution);
+  const textureSize = getTextureCanvasSize({
+    params,
+    width,
+    height,
+    surfaceAspect,
+  });
   const canvas = document.createElement('canvas');
-  canvas.width = normalizeTextureSize(width ?? resolution);
-  canvas.height = normalizeTextureSize(height ?? resolution);
+  canvas.width = textureSize.width;
+  canvas.height = textureSize.height;
 
   const context = canvas.getContext('2d', { alpha: true });
   if (!context) return canvas;
@@ -99,7 +159,7 @@ export function createStlPatternTextureCanvas({
   const renderParams = scalePatternParams({
     ...params,
     backgroundColor: params?.stlBaseColor ?? '#f2f2f2',
-  }, canvas.width);
+  }, Math.max(canvas.width, canvas.height));
   const render = PATTERN_RENDERERS[params?.mode] ?? PATTERN_RENDERERS.vector;
   render(
     canvas,

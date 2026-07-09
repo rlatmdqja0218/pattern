@@ -1,3 +1,5 @@
+import { folder } from 'leva';
+
 /**
  * 패턴 파라미터 기본값 및 Leva 컨트롤 스키마
  *
@@ -6,17 +8,42 @@
  * render 조건으로 현재 mode와 관련 있는 컨트롤만 노출한다.
  */
 
-const isHalftone = (get) => get('mode') === 'halftone';
-const isTiling = (get) => ['standard', 'mirror'].includes(get('mode'));
-const isVector = (get) => get('mode') === 'vector';
-const isMonitorMockup = (get) => get('mockupMode') === 'monitor';
-const isCustomStl = (get) => get('mockupMode') === 'customStl';
+const CONTROL_GROUP_NAMES = [
+  '패턴 만들기',
+  '벡터 추출 / 편집',
+  '3D / UV 매핑',
+  '고급 설정',
+];
+
+function getControlValue(get, key) {
+  const directValue = get(key);
+  if (directValue !== undefined) return directValue;
+
+  for (const groupName of CONTROL_GROUP_NAMES) {
+    const groupValue = get(`${groupName}.${key}`);
+    if (groupValue !== undefined) return groupValue;
+  }
+
+  return undefined;
+}
+
+const isHalftone = (get) => getControlValue(get, 'mode') === 'halftone';
+const isTiling = (get) => ['standard', 'mirror'].includes(getControlValue(get, 'mode'));
+const isVector = (get) => getControlValue(get, 'mode') === 'vector';
+const isMonitorMockup = (get) => getControlValue(get, 'mockupMode') === 'monitor';
+const isCustomStl = (get) => getControlValue(get, 'mockupMode') === 'customStl';
 const isCustomStlTileRepeat = (get) => (
-  isCustomStl(get) && get('stlTextureMappingMode') === 'tileRepeat'
+  isCustomStl(get) && getControlValue(get, 'stlTextureMappingMode') === 'tileRepeat'
 );
 
-/** Leva useControls에 그대로 전달하는 스키마 */
-export const patternControlSchema = {
+const pickControls = (keys) => Object.fromEntries(
+  keys
+    .filter((key) => flatPatternControlSchema[key])
+    .map((key) => [key, flatPatternControlSchema[key]]),
+);
+
+/** 전체 파라미터 정의. 실제 Leva 노출 구조는 아래 patternControlSchema에서 그룹화한다. */
+const flatPatternControlSchema = {
   mode: {
     value: 'vector',
     options: ['halftone', 'standard', 'mirror', 'vector'],
@@ -338,6 +365,15 @@ export const patternControlSchema = {
     options: ['xy', 'xz', 'zy'],
     label: 'STL 투사 축', render: isCustomStl,
   },
+  stlPreservePatternAspect: {
+    value: true,
+    label: '패턴 비율 유지', render: isCustomStl,
+  },
+  stlTextureAspectMode: {
+    value: 'preserveMotif',
+    options: ['square', 'surface', 'preserveMotif'],
+    label: '텍스처 비율 기준', render: isCustomStl,
+  },
   stlSwapUV: {
     value: false,
     label: 'UV 축 교환', render: isCustomStl,
@@ -439,7 +475,119 @@ export const patternControlSchema = {
   backgroundColor: { value: '#f5f1e8', label: '배경 색상' },
 };
 
+/** Leva useControls에 전달하는 사용자-facing 구조 */
+export const patternControlSchema = {
+  '패턴 만들기': folder(
+    pickControls([
+      'mode',
+      'patternPreset',
+      'dotSpacing',
+      'minRadius',
+      'maxRadius',
+      'threshold',
+      'invert',
+      'angle',
+      'foregroundColor',
+      'useSourceColor',
+      'tileScale',
+      'tileSpacing',
+      'motifScale',
+      'motifSpacingX',
+      'motifSpacingY',
+      'motifRotation',
+      'patternStyle',
+      'patternGrammar',
+      'rowOffset',
+      'flowAngle',
+      'flowStrength',
+      'primaryOpacity',
+      'secondaryOpacity',
+      'accentOpacity',
+      'backgroundColor',
+    ]),
+    { collapsed: false },
+  ),
+  '벡터 추출 / 편집': folder(
+    pickControls([
+      'traceMode',
+      'traceThreshold',
+      'traceSimplify',
+      'traceMaxSegments',
+      'curveMode',
+      'curveSmoothness',
+    ]),
+    { collapsed: false },
+  ),
+  '3D / UV 매핑': folder(
+    pickControls([
+      'mockupMode',
+      'mockupPatternScaleX',
+      'mockupPatternScaleY',
+      'mockupPatternOffsetX',
+      'mockupPatternOffsetY',
+      'mockupPatternRotation',
+      'stlMappingPreset',
+      'stlProjectionAxis',
+      'stlPreservePatternAspect',
+      'stlTextureAspectMode',
+      'stlSwapUV',
+      'stlFlipU',
+      'stlFlipV',
+      'stlShowUvChecker',
+      'stlTextureResolution',
+      'stlTextureBackgroundMode',
+      'stlTextureMappingMode',
+      'stlPatternScale',
+      'stlPatternRotation',
+      'stlPatternOffsetX',
+      'stlPatternOffsetY',
+      'stlBaseColor',
+      'stlPatternOpacity',
+      'stlControlMode',
+    ]),
+    { collapsed: false },
+  ),
+  '고급 설정': folder(
+    pickControls([
+      'secondaryScale',
+      'accentScale',
+      'primaryScale',
+      'motifStrokeWidth',
+      'motifStrokeColor',
+      'motifFillEnabled',
+      'motifFillColor',
+      'motifOpacity',
+      'motifAssemblyMode',
+      'motifLayoutMode',
+      'secondaryStrokeWidth',
+      'accentStrokeWidth',
+      'engraveBackground',
+      'invertPattern',
+      'preserveRoleScale',
+      'groupScaleMode',
+      'densityDirection',
+      'densityStrength',
+      'randomJitter',
+      'rotationJitter',
+      'scaleJitter',
+      'traceInvert',
+      'curveSimplifyTolerance',
+      'stlMappingMode',
+      'stlAutoFitMapping',
+      'stlPatternRepeatX',
+      'stlPatternRepeatY',
+      'stlRoughness',
+      'stlMetalness',
+      'stlShowWireframe',
+      'stlPanSpeed',
+      'stlRotateSpeed',
+      'stlZoomSpeed',
+    ]),
+    { collapsed: true },
+  ),
+};
+
 /** 스키마에서 순수 기본값 객체를 추출 (테스트/워커 등 비-Leva 환경용) */
 export const patternDefaults = Object.fromEntries(
-  Object.entries(patternControlSchema).map(([key, def]) => [key, def.value]),
+  Object.entries(flatPatternControlSchema).map(([key, def]) => [key, def.value]),
 );

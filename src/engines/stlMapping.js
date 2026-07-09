@@ -270,6 +270,37 @@ export function applyStlUV(geometry, options = {}) {
   });
 }
 
+export function getStlProjectionAspect(geometry, options = {}) {
+  if (!geometry?.attributes?.position) {
+    return { aspect: 1, uSpan: 1, vSpan: 1 };
+  }
+
+  const normalizedOptions = typeof options === 'string'
+    ? { stlMappingMode: options }
+    : options;
+  const { effective } = resolveStlMappingMode(
+    normalizedOptions.stlMappingMode ?? normalizedOptions.mode,
+  );
+  const [uAxis, vAxis] = resolvePlanarAxes({
+    ...normalizedOptions,
+    mode: effective,
+  });
+
+  geometry.computeBoundingBox();
+  const size = new THREE.Vector3();
+  geometry.boundingBox.getSize(size);
+
+  let uSpan = Math.max(0.0001, size[uAxis] || 1);
+  let vSpan = Math.max(0.0001, size[vAxis] || 1);
+  if (normalizedOptions.stlSwapUV) [uSpan, vSpan] = [vSpan, uSpan];
+
+  return {
+    aspect: Math.min(8, Math.max(0.125, uSpan / vSpan)),
+    uSpan,
+    vSpan,
+  };
+}
+
 export function createUvCheckerTexture(size = 512, cells = 8) {
   const canvas = document.createElement('canvas');
   canvas.width = size;

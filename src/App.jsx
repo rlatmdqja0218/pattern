@@ -52,6 +52,7 @@ export default function App() {
   const imageUrlRef = useRef(null);
   // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
   const [stlUrl, setStlUrl] = useState(null);
+  const [stlSurfaceAspect, setStlSurfaceAspect] = useState(1);
   const stlUrlRef = useRef(null);
   const mockupViewerRef = useRef(null);
 
@@ -201,6 +202,15 @@ export default function App() {
     setControls({ stlControlMode });
   }, [setControls]);
 
+  const handleStlSurfaceAspectChange = useCallback((surfaceAspect) => {
+    const safeAspect = Number.isFinite(surfaceAspect) && surfaceAspect > 0
+      ? surfaceAspect
+      : 1;
+    setStlSurfaceAspect((currentAspect) => (
+      Math.abs(currentAspect - safeAspect) < 0.001 ? currentAspect : safeAspect
+    ));
+  }, []);
+
   useEffect(() => () => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
     if (stlUrlRef.current) URL.revokeObjectURL(stlUrlRef.current);
@@ -258,6 +268,7 @@ export default function App() {
             selectedMotifs={selectedMotifs}
             patternImageData={patternImageData}
             stlUrl={stlUrl}
+            stlSurfaceAspect={stlSurfaceAspect}
           />
         </div>
         <section className="app__upload-section" aria-label="업로드">
@@ -344,6 +355,7 @@ export default function App() {
             onTogglePanel={() => togglePanel('mockup3d')}
             onResetStlMapping={handleResetStlMapping}
             onSetStlControlMode={handleSetStlControlMode}
+            onStlSurfaceAspectChange={handleStlSurfaceAspectChange}
           />
         </div>
       </main>

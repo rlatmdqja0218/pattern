@@ -16,6 +16,7 @@ export default function DownloadMenu({
   selectedMotifs,
   patternImageData,
   stlUrl,
+  stlSurfaceAspect = 1,
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -51,6 +52,7 @@ export default function DownloadMenu({
       imageData: patternImageData,
       width: stlResolution,
       height: stlResolution,
+      surfaceAspect: stlSurfaceAspect,
     });
     return downloadCanvasAsPng(
       textureCanvas,
@@ -62,6 +64,7 @@ export default function DownloadMenu({
     patternImageData,
     selectedMotifs,
     stlResolution,
+    stlSurfaceAspect,
   ]);
 
   const items = useMemo(() => [
