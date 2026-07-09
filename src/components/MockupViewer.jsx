@@ -551,6 +551,7 @@ export default function MockupViewer({
   panelCollapsed,
   onTogglePanel,
   onResetStlMapping,
+  onSetStlControlMode,
 }) {
   const [fitRequest, setFitRequest] = useState(0);
   const [viewResetRequest, setViewResetRequest] = useState(0);
@@ -561,6 +562,7 @@ export default function MockupViewer({
   const meta = isCustomStl
     ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureMappingMode} · ${params.stlTextureResolution}px`
     : 'monitor back panel';
+  const activeStlControlMode = params.stlControlMode ?? 'freeRotate';
 
   useEffect(() => {
     if (!canControlStlView || !isStlPanelHovered) {
@@ -607,6 +609,24 @@ export default function MockupViewer({
 
   const actions = isCustomStl ? (
     <div className="mockup-viewer__actions" aria-label="STL 보기 조절">
+      <div className="mockup-viewer__mode-switch" aria-label="STL 조작 방식">
+        {[
+          ['orbit', '궤도'],
+          ['pan', '이동'],
+          ['freeRotate', '자유회전'],
+        ].map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            className={activeStlControlMode === mode ? 'is-active' : ''}
+            onClick={() => onSetStlControlMode?.(mode)}
+            aria-pressed={activeStlControlMode === mode}
+            title={`STL 조작 방식: ${label}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         onClick={() => setFitRequest((current) => current + 1)}

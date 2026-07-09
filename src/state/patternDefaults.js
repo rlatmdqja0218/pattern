@@ -374,7 +374,7 @@ export const patternControlSchema = {
     label: 'STL 텍스처 방식', render: isCustomStl,
   },
   stlControlMode: {
-    value: 'orbit',
+    value: 'freeRotate',
     options: ['orbit', 'pan', 'freeRotate'],
     label: 'STL 조작 방식', render: isCustomStl,
   },

@@ -199,7 +199,16 @@
 
 .mockup-viewer__actions {
   display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.mockup-viewer__mode-switch {
+  display: flex;
+  overflow: hidden;
+  margin-right: 4px;
+  border: 1px solid #303842;
+  border-radius: 5px;
 }
 
 .mockup-viewer__actions button {
@@ -212,6 +221,21 @@
   font: inherit;
   font-size: 11px;
   cursor: pointer;
+}
+
+.mockup-viewer__mode-switch button {
+  border: 0;
+  border-right: 1px solid #303842;
+  border-radius: 0;
+}
+
+.mockup-viewer__mode-switch button:last-child {
+  border-right: 0;
+}
+
+.mockup-viewer__mode-switch button.is-active {
+  background: #0f6fd8;
+  color: #ffffff;
 }
 
 .mockup-viewer__actions button:hover:not(:disabled) {

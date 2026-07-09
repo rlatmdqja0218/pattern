@@ -175,13 +175,17 @@ export default function App() {
     const url = URL.createObjectURL(file);
     stlUrlRef.current = url;
     setStlUrl(url);
-    // customStl 모드로 자동 전환해 업로드 결과가 바로 보이게 한다
-    setControls({ mockupMode: 'customStl' });
+    // customStl + 자유회전 모드로 자동 전환해 업로드 결과와 조작 변화가 바로 보이게 한다
+    setControls({ mockupMode: 'customStl', stlControlMode: 'freeRotate' });
   }, [setControls]);
 
   const handleResetStlMapping = useCallback(() => {
     setControls(getStlMappingPresetValues(rawParams.stlMappingPreset));
   }, [rawParams.stlMappingPreset, setControls]);
+
+  const handleSetStlControlMode = useCallback((stlControlMode) => {
+    setControls({ stlControlMode });
+  }, [setControls]);
 
   // 접힘 상태에 따른 컬럼/셀 크기: 접힌 쪽은 최소만 남기고
   // 나머지 패널이 flexGrow로 남은 공간을 차지한다.
@@ -294,6 +298,7 @@ export default function App() {
             panelCollapsed={mockupCollapsed}
             onTogglePanel={() => togglePanel('mockup3d')}
             onResetStlMapping={handleResetStlMapping}
+            onSetStlControlMode={handleSetStlControlMode}
           />
         </div>
       </main>
