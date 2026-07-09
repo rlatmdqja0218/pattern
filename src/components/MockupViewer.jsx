@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import PreviewPanel from './PreviewPanel';
+import {
+  normalizeStlGeometry,
+  applyStlUV,
+  createPatternMaterial,
+  updatePatternMaterial,
+  updatePatternTextureTransform,
+  resolveStlMappingMode,
+} from '../engines/stlMapping';
 
 const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternScaleX: 1,
@@ -161,30 +170,146 @@ function ProductBackPanelMockup({ patternCanvas, patternVersion, params }) {
 }
 
 /**
- * 3D Mockup 프리뷰 (three.js + @react-three/fiber 기반).
+ * 사용자 업로드 STL 목업.
+ * STL은 보통 UV가 없으므로 engines/stlMapping이 planar/box UV를 생성하고,
+ * 2D 패턴과 동일한 CanvasTexture를 머티리얼에 입혀 실시간 반영한다.
  */
-export default function MockupViewer({ patternCanvas, patternVersion, params }) {
+function CustomStlMockup({ stlUrl, patternCanvas, patternVersion, params }) {
+  const [geometry, setGeometry] = useState(null);
+  const [texture, setTexture] = useState(null);
+  // 로더 콜백 시점의 최신 매핑 모드를 참조하기 위한 ref
+  const mappingModeRef = useRef(params.stlMappingMode);
+  mappingModeRef.current = params.stlMappingMode;
+
+  // STL 로드 → 노멀/센터/스케일 정규화 → 초기 UV 생성
+  useEffect(() => {
+    if (!stlUrl) {
+      setGeometry(null);
+      return;
+    }
+    let disposed = false;
+    new STLLoader().load(
+      stlUrl,
+      (loaded) => {
+        if (disposed) {
+          loaded.dispose();
+          return;
+        }
+        normalizeStlGeometry(loaded);
+        applyStlUV(loaded, mappingModeRef.current);
+        setGeometry(loaded);
+      },
+      undefined,
+      () => {
+        if (!disposed) setGeometry(null);
+      },
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [stlUrl]);
+
+  // geometry 교체/언마운트 시 GPU 리소스 해제
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+
+  // 매핑 모드가 바뀌면 같은 geometry에 UV를 다시 생성
+  useEffect(() => {
+    if (geometry) applyStlUV(geometry, params.stlMappingMode);
+  }, [geometry, params.stlMappingMode]);
+
+  // 2D 패턴 캔버스 → CanvasTexture (monitor 목업과 동일한 소스 캔버스 공유)
+  useEffect(() => {
+    if (!patternCanvas) {
+      setTexture(null);
+      return;
+    }
+    const canvasTexture = new THREE.CanvasTexture(patternCanvas);
+    canvasTexture.colorSpace = THREE.SRGBColorSpace;
+    setTexture(canvasTexture);
+    return () => canvasTexture.dispose();
+  }, [patternCanvas]);
+
+  // 텍스처 반복/오프셋/회전 변환
+  useEffect(() => {
+    if (texture) updatePatternTextureTransform(texture, params);
+  }, [texture, params]);
+
+  // 패턴 파라미터·role·preset 변경으로 캔버스가 다시 그려지면 텍스처 갱신
+  useEffect(() => {
+    if (texture) texture.needsUpdate = true;
+  }, [patternVersion, texture]);
+
+  // 머티리얼은 한 번 만들고 제자리 갱신 (map 유무 변화 시 재컴파일 처리 포함)
+  const material = useMemo(() => createPatternMaterial(null, {}), []);
+  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => {
+    updatePatternMaterial(material, texture, params);
+  }, [material, texture, params]);
+
+  if (!geometry) return null;
+  return <mesh geometry={geometry} material={material} />;
+}
+
+/**
+ * 3D Mockup 프리뷰 (three.js + @react-three/fiber 기반).
+ * mockupMode: 'monitor'(기존 모니터 후면 패널) | 'customStl'(업로드 STL)
+ */
+export default function MockupViewer({
+  patternCanvas,
+  patternVersion,
+  params,
+  stlUrl,
+}) {
+  const isCustomStl = params?.mockupMode === 'customStl';
+  const meta = isCustomStl
+    ? `custom STL · ${resolveStlMappingMode(params?.stlMappingMode).label}`
+    : 'monitor back panel';
+
   return (
-    <PreviewPanel title="3D 목업 프리뷰" meta="monitor back panel">
+    <PreviewPanel title="3D 목업 프리뷰" meta={meta}>
       <div className="preview-panel__body">
         <Canvas camera={{ position: [0.2, 0.25, 5.1], fov: 38 }}>
           <color attach="background" args={['#101317']} />
-          <ambientLight intensity={0.58} />
-          <directionalLight position={[3.5, 4.5, 4]} intensity={1.15} />
-          <directionalLight position={[-3, 1.5, 2]} intensity={0.45} />
-          <ProductBackPanelMockup
-            patternCanvas={patternCanvas}
-            patternVersion={patternVersion}
-            params={params}
-          />
+          {isCustomStl ? (
+            <>
+              {/* 스튜디오 제품 렌더링 조명: 키 + 필 + 림 + 하늘빛 */}
+              <hemisphereLight args={['#cfd8e3', '#1a1e24', 0.5]} />
+              <directionalLight position={[4, 5, 5]} intensity={1.25} />
+              <directionalLight position={[-4, 2, 3]} intensity={0.5} />
+              <directionalLight position={[0, 3, -5]} intensity={0.7} />
+              {stlUrl && (
+                <CustomStlMockup
+                  stlUrl={stlUrl}
+                  patternCanvas={patternCanvas}
+                  patternVersion={patternVersion}
+                  params={params}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              <ambientLight intensity={0.58} />
+              <directionalLight position={[3.5, 4.5, 4]} intensity={1.15} />
+              <directionalLight position={[-3, 1.5, 2]} intensity={0.45} />
+              <ProductBackPanelMockup
+                patternCanvas={patternCanvas}
+                patternVersion={patternVersion}
+                params={params}
+              />
+            </>
+          )}
           <OrbitControls
             enableDamping
             dampingFactor={0.08}
             autoRotate={false}
-            minDistance={3.1}
-            maxDistance={7}
+            enablePan={isCustomStl}
+            minDistance={isCustomStl ? 1.2 : 3.1}
+            maxDistance={isCustomStl ? 12 : 7}
           />
         </Canvas>
+        {isCustomStl && !stlUrl && (
+          <p className="preview-panel__placeholder">STL 파일을 업로드하세요</p>
+        )}
       </div>
     </PreviewPanel>
   );

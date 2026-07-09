@@ -9,6 +9,8 @@
 const isHalftone = (get) => get('mode') === 'halftone';
 const isTiling = (get) => ['standard', 'mirror'].includes(get('mode'));
 const isVector = (get) => get('mode') === 'vector';
+const isMonitorMockup = (get) => get('mockupMode') === 'monitor';
+const isCustomStl = (get) => get('mockupMode') === 'customStl';
 
 /** Leva useControls에 그대로 전달하는 스키마 */
 export const patternControlSchema = {
@@ -275,25 +277,91 @@ export const patternControlSchema = {
     label: '곡선 단순화',
     render: isVector,
   },
+  // — 3D 목업 공통 —
+  mockupMode: {
+    value: 'monitor',
+    options: ['monitor', 'customStl'],
+    label: '목업 모드',
+  },
+
+  // — monitor 목업 전용 —
   mockupPatternScaleX: {
     value: 1, min: 0.2, max: 6, step: 0.05,
-    label: '목업 패턴 X 배율',
+    label: '목업 패턴 X 배율', render: isMonitorMockup,
   },
   mockupPatternScaleY: {
     value: 1, min: 0.2, max: 6, step: 0.05,
-    label: '목업 패턴 Y 배율',
+    label: '목업 패턴 Y 배율', render: isMonitorMockup,
   },
   mockupPatternOffsetX: {
     value: 0, min: -1, max: 1, step: 0.01,
-    label: '목업 패턴 X 이동',
+    label: '목업 패턴 X 이동', render: isMonitorMockup,
   },
   mockupPatternOffsetY: {
     value: 0, min: -1, max: 1, step: 0.01,
-    label: '목업 패턴 Y 이동',
+    label: '목업 패턴 Y 이동', render: isMonitorMockup,
   },
   mockupPatternRotation: {
     value: 0, min: -3.14, max: 3.14, step: 0.01,
-    label: '목업 패턴 회전(rad)',
+    label: '목업 패턴 회전(rad)', render: isMonitorMockup,
+  },
+
+  // — custom STL 목업 전용 —
+  stlMappingMode: {
+    value: 'planarFront',
+    options: [
+      'planarFront',
+      'planarTop',
+      'planarSide',
+      'box',
+      'triplanar',
+      'decalProjector',
+    ],
+    label: 'STL 매핑 방식', render: isCustomStl,
+  },
+  stlPatternScale: {
+    value: 1, min: 0.1, max: 10, step: 0.05,
+    label: 'STL 패턴 크기', render: isCustomStl,
+  },
+  stlPatternRotation: {
+    value: 0, min: -180, max: 180, step: 1,
+    label: 'STL 패턴 회전', render: isCustomStl,
+  },
+  stlPatternOffsetX: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: 'STL 패턴 X 이동', render: isCustomStl,
+  },
+  stlPatternOffsetY: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: 'STL 패턴 Y 이동', render: isCustomStl,
+  },
+  stlPatternRepeatX: {
+    value: 3, min: 0.2, max: 20, step: 0.1,
+    label: 'STL 반복 X', render: isCustomStl,
+  },
+  stlPatternRepeatY: {
+    value: 3, min: 0.2, max: 20, step: 0.1,
+    label: 'STL 반복 Y', render: isCustomStl,
+  },
+  stlBaseColor: {
+    value: '#f2f2f2',
+    label: 'STL 기본 색상', render: isCustomStl,
+  },
+  stlPatternOpacity: {
+    value: 1, min: 0, max: 1, step: 0.05,
+    label: 'STL 패턴 투명도', render: isCustomStl,
+  },
+  stlRoughness: {
+    value: 0.72, min: 0, max: 1, step: 0.01,
+    label: 'STL 러프니스', render: isCustomStl,
+  },
+  stlMetalness: {
+    value: 0.05, min: 0, max: 1, step: 0.01,
+    label: 'STL 메탈니스', render: isCustomStl,
+  },
+  stlShowWireframe: {
+    value: false,
+    label: 'STL 와이어프레임', render: isCustomStl,
   },
 
   // — 공통 —

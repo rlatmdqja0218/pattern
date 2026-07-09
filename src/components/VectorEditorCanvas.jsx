@@ -89,10 +89,10 @@ function getCandidateLabel(candidate, index) {
   return `후보 ${index + 1} · ${shapeHint} · ${area}/${length}`;
 }
 
-function getDefaultCandidateRole(index) {
-  if (index === 0) return 'primary';
-  if (index === 1 || index === 2) return 'secondary';
-  return 'accent';
+// 최초 추출된 모든 후보의 기본 role은 primary다.
+// secondary/accent/ignore는 사용자가 직접 선택했을 때만 적용된다.
+function getDefaultCandidateRole() {
+  return 'primary';
 }
 
 function createDefaultCandidateRoles(candidates) {
@@ -119,7 +119,7 @@ function getSelectedMotifs(pathCandidates, selectedCandidateIds, candidateRoles)
     .map((candidateId) => pathCandidates.find((candidate) => candidate.id === candidateId))
     .filter(Boolean)
     .map(({ id, area, length, editablePath }) => {
-      const role = candidateRoles[id] ?? 'accent';
+      const role = candidateRoles[id] ?? 'primary';
       if (role === 'ignore') return null;
 
       return {

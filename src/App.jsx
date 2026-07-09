@@ -43,6 +43,9 @@ export default function App() {
   const [selectedMotifs, setSelectedMotifs] = useState([]);
   const [patternCanvas, setPatternCanvas] = useState(null);
   const [patternVersion, setPatternVersion] = useState(0);
+  // 업로드된 STL의 object URL — customStl 목업 모드에서 사용
+  const [stlUrl, setStlUrl] = useState(null);
+  const stlUrlRef = useRef(null);
 
   // Leva 사이드바 컨트롤 — 이 값들이 앱의 단일 상태 소스(state)가 된다.
   // image: 업로드 시 object URL 문자열이 상태로 저장된다.
@@ -119,12 +122,30 @@ export default function App() {
     setPatternVersion((currentVersion) => currentVersion + 1);
   }, []);
 
+  const handleStlUpload = useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (stlUrlRef.current) URL.revokeObjectURL(stlUrlRef.current);
+    const url = URL.createObjectURL(file);
+    stlUrlRef.current = url;
+    setStlUrl(url);
+    // customStl 모드로 자동 전환해 업로드 결과가 바로 보이게 한다
+    setControls({ mockupMode: 'customStl' });
+  }, [setControls]);
+
   return (
     <div className="app">
       <aside className="app__sidebar">
         <h1 className="app__title">패턴 제너레이터</h1>
         <p className="app__subtitle">이미지 기반 패턴 생성 & 3D 목업</p>
         <LevaPanel store={store} fill flat titleBar={false} />
+        <label className="app__stl-upload">
+          <span>STL 모델 업로드</span>
+          <input type="file" accept=".stl" onChange={handleStlUpload} />
+          <span className="app__stl-upload-hint">
+            {stlUrl ? 'STL 로드됨 · customStl 모드' : '.stl 파일 선택'}
+          </span>
+        </label>
       </aside>
       <main className="app__previews">
         <PanelGroup
@@ -156,6 +177,7 @@ export default function App() {
               patternCanvas={patternCanvas}
               patternVersion={patternVersion}
               params={params}
+              stlUrl={stlUrl}
             />
           </Panel>
         </PanelGroup>
