@@ -319,6 +319,42 @@ export const patternControlSchema = {
     ],
     label: 'STL 매핑 방식', render: isCustomStl,
   },
+  stlMappingPreset: {
+    value: 'frontPanel',
+    options: [
+      'frontPanel',
+      'topSurface',
+      'sideSurface',
+      'curvedCanopy',
+      'productBack',
+    ],
+    label: 'STL 매핑 프리셋', render: isCustomStl,
+  },
+  stlProjectionAxis: {
+    value: 'xy',
+    options: ['xy', 'xz', 'zy'],
+    label: 'STL 투사 축', render: isCustomStl,
+  },
+  stlSwapUV: {
+    value: false,
+    label: 'UV 축 교환', render: isCustomStl,
+  },
+  stlFlipU: {
+    value: false,
+    label: 'U 반전', render: isCustomStl,
+  },
+  stlFlipV: {
+    value: false,
+    label: 'V 반전', render: isCustomStl,
+  },
+  stlAutoFitMapping: {
+    value: true,
+    label: '매핑 자동 맞춤', render: isCustomStl,
+  },
+  stlShowUvChecker: {
+    value: false,
+    label: 'UV 체크 보기', render: isCustomStl,
+  },
   stlPatternScale: {
     value: 1, min: 0.1, max: 10, step: 0.05,
     label: 'STL 패턴 크기', render: isCustomStl,

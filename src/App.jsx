@@ -11,6 +11,7 @@ import MockupViewer from './components/MockupViewer';
 import VectorEditorCanvas from './components/VectorEditorCanvas';
 import { patternControlSchema } from './state/patternDefaults';
 import { PATTERN_PRESETS } from './state/patternPresets';
+import { getStlMappingPresetValues } from './engines/stlMapping';
 import { usePersistentLayout } from './hooks/usePersistentLayout';
 import { useSplitterDrag } from './hooks/useResizablePanels';
 import './App.css';
@@ -30,11 +31,9 @@ function doesPresetMatchParams(preset, params) {
   return Object.entries(preset).every(([key, value]) => params[key] === value);
 }
 
-function didParamsChange(previousParams, nextParams) {
+function didParamsChange(previousParams, nextParams, preset) {
   if (!previousParams) return false;
-  return Object.entries(nextParams).some(([key, value]) => (
-    key !== 'patternPreset' && previousParams[key] !== value
-  ));
+  return Object.keys(preset).some((key) => previousParams[key] !== nextParams[key]);
 }
 
 export default function App() {
@@ -42,6 +41,7 @@ export default function App() {
   const applyingPresetRef = useRef(false);
   const previousPresetRef = useRef('custom');
   const previousParamsRef = useRef(null);
+  const previousStlMappingPresetRef = useRef('frontPanel');
   const [editablePath, setEditablePath] = useState(null);
   const [selectedMotifs, setSelectedMotifs] = useState([]);
   const [patternCanvas, setPatternCanvas] = useState(null);
@@ -109,7 +109,7 @@ export default function App() {
     const presetChanged = previousPresetRef.current !== presetKey;
     const matchesPreset = doesPresetMatchParams(preset, rawParams);
     const userChangedParams = previousParamsRef.current?.patternPreset === presetKey
-      && didParamsChange(previousParamsRef.current, rawParams);
+      && didParamsChange(previousParamsRef.current, rawParams, preset);
 
     if (presetChanged) {
       applyingPresetRef.current = !matchesPreset;
@@ -141,6 +141,13 @@ export default function App() {
     rememberParams();
   }, [rawParams, setControls]);
 
+  useEffect(() => {
+    const preset = rawParams.stlMappingPreset ?? 'frontPanel';
+    if (previousStlMappingPresetRef.current === preset) return;
+    previousStlMappingPresetRef.current = preset;
+    setControls(getStlMappingPresetValues(preset));
+  }, [rawParams.stlMappingPreset, setControls]);
+
   const handlePathChange = useCallback((pathData) => {
     setEditablePath(pathData);
   }, []);
@@ -166,6 +173,10 @@ export default function App() {
     // customStl 모드로 자동 전환해 업로드 결과가 바로 보이게 한다
     setControls({ mockupMode: 'customStl' });
   }, [setControls]);
+
+  const handleResetStlMapping = useCallback(() => {
+    setControls(getStlMappingPresetValues(rawParams.stlMappingPreset));
+  }, [rawParams.stlMappingPreset, setControls]);
 
   // 접힘 상태에 따른 컬럼/셀 크기: 접힌 쪽은 최소만 남기고
   // 나머지 패널이 flexGrow로 남은 공간을 차지한다.
@@ -273,6 +284,7 @@ export default function App() {
             stlUrl={stlUrl}
             panelCollapsed={mockupCollapsed}
             onTogglePanel={() => togglePanel('mockup3d')}
+            onResetStlMapping={handleResetStlMapping}
           />
         </div>
       </main>

@@ -197,6 +197,33 @@
   white-space: nowrap;
 }
 
+.mockup-viewer__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.mockup-viewer__actions button {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid #303842;
+  border-radius: 5px;
+  background: #1d232a;
+  color: #aeb8c6;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mockup-viewer__actions button:hover:not(:disabled) {
+  color: #e9f4ff;
+  border-color: #3f4c5b;
+}
+
+.mockup-viewer__actions button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
 .preview-panel__content {
   display: flex;
   flex: 1;

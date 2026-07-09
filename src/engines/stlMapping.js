@@ -24,6 +24,79 @@ const PLANAR_AXES = {
   planarSide: ['z', 'y'], // X 방향 측면 투사 — 측면 패널용
 };
 
+const PROJECTION_AXES = {
+  xy: ['x', 'y'],
+  xz: ['x', 'z'],
+  zy: ['z', 'y'],
+};
+
+function resolvePlanarAxes(options = {}) {
+  const mode = options.mode ?? options.stlMappingMode;
+  const projectionAxis = options.projectionAxis ?? options.stlProjectionAxis;
+  return (mode && mode !== 'planarFront' ? PLANAR_AXES[mode] : null)
+    ?? PROJECTION_AXES[projectionAxis]
+    ?? PLANAR_AXES[mode]
+    ?? PLANAR_AXES.planarFront;
+}
+
+export const STL_MAPPING_PRESETS = {
+  frontPanel: {
+    stlMappingMode: 'planarFront',
+    stlProjectionAxis: 'xy',
+    stlSwapUV: false,
+    stlFlipU: false,
+    stlFlipV: false,
+    stlPatternRepeatX: 3,
+    stlPatternRepeatY: 3,
+  },
+  topSurface: {
+    stlMappingMode: 'planarFront',
+    stlProjectionAxis: 'xz',
+    stlSwapUV: false,
+    stlFlipU: false,
+    stlFlipV: false,
+    stlPatternRepeatX: 3,
+    stlPatternRepeatY: 3,
+  },
+  sideSurface: {
+    stlMappingMode: 'planarFront',
+    stlProjectionAxis: 'zy',
+    stlSwapUV: false,
+    stlFlipU: false,
+    stlFlipV: false,
+    stlPatternRepeatX: 3,
+    stlPatternRepeatY: 3,
+  },
+  curvedCanopy: {
+    stlMappingMode: 'planarFront',
+    stlProjectionAxis: 'xz',
+    stlSwapUV: true,
+    stlFlipU: false,
+    stlFlipV: false,
+    stlPatternRepeatX: 4.5,
+    stlPatternRepeatY: 2.4,
+  },
+  productBack: {
+    stlMappingMode: 'planarFront',
+    stlProjectionAxis: 'xy',
+    stlSwapUV: false,
+    stlFlipU: false,
+    stlFlipV: false,
+    stlPatternRepeatX: 3,
+    stlPatternRepeatY: 3,
+  },
+};
+
+export function getStlMappingPresetValues(preset = 'frontPanel') {
+  return {
+    ...(STL_MAPPING_PRESETS[preset] ?? STL_MAPPING_PRESETS.frontPanel),
+    stlAutoFitMapping: true,
+    stlPatternRotation: 0,
+    stlPatternOffsetX: 0,
+    stlPatternOffsetY: 0,
+  };
+}
+
 /**
  * 아직 완전 구현되지 않은 매핑 모드를 v1 fallback으로 해석한다.
  * @returns {{ effective: string, label: string }}
@@ -60,6 +133,7 @@ export function normalizeStlGeometry(geometry, targetSize = 2.4) {
   geometry.boundingBox.getCenter(center);
   geometry.translate(-center.x, -center.y, -center.z);
 
+  geometry.computeBoundingBox();
   const size = new THREE.Vector3();
   geometry.boundingBox.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
@@ -71,6 +145,19 @@ export function normalizeStlGeometry(geometry, targetSize = 2.4) {
   return geometry;
 }
 
+export function getPerspectiveFitDistance(
+  radius,
+  verticalFovDegrees,
+  aspect,
+  padding = 1.18,
+) {
+  const verticalFov = THREE.MathUtils.degToRad(verticalFovDegrees);
+  const safeAspect = Math.max(0.01, aspect);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * safeAspect);
+  const fitFov = Math.min(verticalFov, horizontalFov);
+  return (Math.max(radius, 0.01) / Math.sin(fitFov / 2)) * padding;
+}
+
 /**
  * bounding box 기준 planar 투영 UV를 생성한다.
  * 예: planarFront는 각 정점의 (x, y)를 0~1로 정규화해 UV로 사용 —
@@ -79,11 +166,14 @@ export function normalizeStlGeometry(geometry, targetSize = 2.4) {
  * @param {THREE.BufferGeometry} geometry (uv attribute를 새로 만든다)
  * @param {'planarFront'|'planarTop'|'planarSide'} [mode]
  */
-export function applyPlanarUV(geometry, mode = 'planarFront') {
+export function applyPlanarUV(geometry, options = {}) {
   const position = geometry?.attributes?.position;
   if (!position) return geometry;
 
-  const [uAxis, vAxis] = PLANAR_AXES[mode] ?? PLANAR_AXES.planarFront;
+  const normalizedOptions = typeof options === 'string'
+    ? { mode: options }
+    : options;
+  const [uAxis, vAxis] = resolvePlanarAxes(normalizedOptions);
   const uIdx = AXIS_INDEX[uAxis];
   const vIdx = AXIS_INDEX[vAxis];
 
@@ -98,8 +188,13 @@ export function applyPlanarUV(geometry, mode = 'planarFront') {
 
   const uv = new Float32Array(position.count * 2);
   for (let i = 0; i < position.count; i += 1) {
-    uv[i * 2] = (position.getComponent(i, uIdx) - minArr[uIdx]) / rangeArr[uIdx];
-    uv[i * 2 + 1] = (position.getComponent(i, vIdx) - minArr[vIdx]) / rangeArr[vIdx];
+    let u = (position.getComponent(i, uIdx) - minArr[uIdx]) / rangeArr[uIdx];
+    let v = (position.getComponent(i, vIdx) - minArr[vIdx]) / rangeArr[vIdx];
+    if (normalizedOptions.stlSwapUV) [u, v] = [v, u];
+    if (normalizedOptions.stlFlipU) u = 1 - u;
+    if (normalizedOptions.stlFlipV) v = 1 - v;
+    uv[i * 2] = u;
+    uv[i * 2 + 1] = v;
   }
 
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -115,7 +210,7 @@ export function applyPlanarUV(geometry, mode = 'planarFront') {
  *
  * @param {THREE.BufferGeometry} geometry (uv attribute를 새로 만든다)
  */
-export function applyBoxUV(geometry) {
+export function applyBoxUV(geometry, options = {}) {
   const position = geometry?.attributes?.position;
   if (!position) return geometry;
   if (!geometry.attributes.normal) geometry.computeVertexNormals();
@@ -144,8 +239,13 @@ export function applyBoxUV(geometry) {
     const nz = Math.abs(normal.getZ(i));
     const dominant = nx >= ny && nx >= nz ? 0 : ny >= nz ? 1 : 2;
     const [uIdx, vIdx] = UV_BY_DOMINANT[dominant];
-    uv[i * 2] = (position.getComponent(i, uIdx) - minArr[uIdx]) / rangeArr[uIdx];
-    uv[i * 2 + 1] = (position.getComponent(i, vIdx) - minArr[vIdx]) / rangeArr[vIdx];
+    let u = (position.getComponent(i, uIdx) - minArr[uIdx]) / rangeArr[uIdx];
+    let v = (position.getComponent(i, vIdx) - minArr[vIdx]) / rangeArr[vIdx];
+    if (options.stlSwapUV) [u, v] = [v, u];
+    if (options.stlFlipU) u = 1 - u;
+    if (options.stlFlipV) v = 1 - v;
+    uv[i * 2] = u;
+    uv[i * 2 + 1] = v;
   }
 
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -156,10 +256,50 @@ export function applyBoxUV(geometry) {
 /**
  * 매핑 모드에 맞는 UV를 geometry에 적용한다. (단일 진입점)
  */
-export function applyStlUV(geometry, mode = 'planarFront') {
+export function applyStlUV(geometry, options = {}) {
+  const normalizedOptions = typeof options === 'string'
+    ? { stlMappingMode: options }
+    : options;
+  const mode = normalizedOptions.stlMappingMode ?? 'planarFront';
   const { effective } = resolveStlMappingMode(mode);
-  if (effective === 'box') return applyBoxUV(geometry);
-  return applyPlanarUV(geometry, effective);
+  if (effective === 'box') return applyBoxUV(geometry, normalizedOptions);
+  return applyPlanarUV(geometry, {
+    ...normalizedOptions,
+    mode: effective,
+  });
+}
+
+export function createUvCheckerTexture(size = 512, cells = 8) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  const cellSize = size / cells;
+
+  context.fillStyle = '#111820';
+  context.fillRect(0, 0, size, size);
+  for (let y = 0; y < cells; y += 1) {
+    for (let x = 0; x < cells; x += 1) {
+      context.fillStyle = (x + y) % 2 === 0 ? '#18a0fb' : '#f04f78';
+      context.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      context.strokeStyle = '#eef7ff';
+      context.lineWidth = 2;
+      context.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+
+  context.fillStyle = '#ffffff';
+  context.font = `700 ${Math.round(size * 0.07)}px sans-serif`;
+  context.fillText('U →', size * 0.05, size * 0.11);
+  context.save();
+  context.translate(size * 0.08, size * 0.92);
+  context.rotate(-Math.PI / 2);
+  context.fillText('V →', 0, 0);
+  context.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 /**
@@ -202,15 +342,31 @@ export function updatePatternMaterial(material, texture, params = {}) {
  * 패턴 텍스처의 반복/오프셋/회전 변환을 STL 파라미터로 갱신한다.
  * stlPatternScale이 클수록 패턴이 커지도록 repeat를 scale로 나눈다.
  */
-export function updatePatternTextureTransform(texture, params = {}) {
+export function updatePatternTextureTransform(texture, params = {}, geometry = null) {
   if (!texture) return texture;
   const scale = Math.max(0.01, params.stlPatternScale ?? 1);
+  let repeatX = (params.stlPatternRepeatX ?? 3) / scale;
+  let repeatY = (params.stlPatternRepeatY ?? 3) / scale;
+
+  if (params.stlAutoFitMapping && geometry) {
+    geometry.computeBoundingBox();
+    const { effective } = resolveStlMappingMode(params.stlMappingMode);
+    const [uAxis, vAxis] = resolvePlanarAxes({
+      ...params,
+      mode: effective,
+    });
+    const size = new THREE.Vector3();
+    geometry.boundingBox.getSize(size);
+    let uSpan = size[uAxis] || 1;
+    let vSpan = size[vAxis] || 1;
+    if (params.stlSwapUV) [uSpan, vSpan] = [vSpan, uSpan];
+    if (uSpan > vSpan) repeatX *= uSpan / vSpan;
+    else repeatY *= vSpan / uSpan;
+  }
+
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(
-    (params.stlPatternRepeatX ?? 3) / scale,
-    (params.stlPatternRepeatY ?? 3) / scale,
-  );
+  texture.repeat.set(repeatX, repeatY);
   texture.offset.set(
     params.stlPatternOffsetX ?? 0,
     params.stlPatternOffsetY ?? 0,

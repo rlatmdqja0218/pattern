@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { OrbitControls } from '@react-three/drei';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import PreviewPanel from './PreviewPanel';
 import {
   normalizeStlGeometry,
+  getPerspectiveFitDistance,
   applyStlUV,
   createPatternMaterial,
+  createUvCheckerTexture,
   updatePatternMaterial,
   updatePatternTextureTransform,
-  resolveStlMappingMode,
 } from '../engines/stlMapping';
 
 const DEFAULT_MOCKUP_PARAMS = {
@@ -174,12 +181,32 @@ function ProductBackPanelMockup({ patternCanvas, patternVersion, params }) {
  * STL은 보통 UV가 없으므로 engines/stlMapping이 planar/box UV를 생성하고,
  * 2D 패턴과 동일한 CanvasTexture를 머티리얼에 입혀 실시간 반영한다.
  */
-function CustomStlMockup({ stlUrl, patternCanvas, patternVersion, params }) {
+function CustomStlMockup({
+  stlUrl,
+  patternCanvas,
+  patternVersion,
+  params,
+  fitRequest,
+}) {
   const [geometry, setGeometry] = useState(null);
   const [texture, setTexture] = useState(null);
-  // 로더 콜백 시점의 최신 매핑 모드를 참조하기 위한 ref
-  const mappingModeRef = useRef(params.stlMappingMode);
-  mappingModeRef.current = params.stlMappingMode;
+  const controlsRef = useRef(null);
+  const { camera, size, invalidate } = useThree();
+  const mappingOptions = useMemo(() => ({
+    stlMappingMode: params.stlMappingMode,
+    stlProjectionAxis: params.stlProjectionAxis,
+    stlSwapUV: params.stlSwapUV,
+    stlFlipU: params.stlFlipU,
+    stlFlipV: params.stlFlipV,
+  }), [
+    params.stlFlipU,
+    params.stlFlipV,
+    params.stlMappingMode,
+    params.stlProjectionAxis,
+    params.stlSwapUV,
+  ]);
+  const mappingOptionsRef = useRef(mappingOptions);
+  mappingOptionsRef.current = mappingOptions;
 
   // STL 로드 → 노멀/센터/스케일 정규화 → 초기 UV 생성
   useEffect(() => {
@@ -196,7 +223,7 @@ function CustomStlMockup({ stlUrl, patternCanvas, patternVersion, params }) {
           return;
         }
         normalizeStlGeometry(loaded);
-        applyStlUV(loaded, mappingModeRef.current);
+        applyStlUV(loaded, mappingOptionsRef.current);
         setGeometry(loaded);
       },
       undefined,
@@ -212,10 +239,10 @@ function CustomStlMockup({ stlUrl, patternCanvas, patternVersion, params }) {
   // geometry 교체/언마운트 시 GPU 리소스 해제
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
-  // 매핑 모드가 바뀌면 같은 geometry에 UV를 다시 생성
+  // 투사 축과 방향 옵션이 바뀌면 같은 geometry에 UV를 다시 생성
   useEffect(() => {
-    if (geometry) applyStlUV(geometry, params.stlMappingMode);
-  }, [geometry, params.stlMappingMode]);
+    if (geometry) applyStlUV(geometry, mappingOptions);
+  }, [geometry, mappingOptions]);
 
   // 2D 패턴 캔버스 → CanvasTexture (monitor 목업과 동일한 소스 캔버스 공유)
   useEffect(() => {
@@ -231,23 +258,80 @@ function CustomStlMockup({ stlUrl, patternCanvas, patternVersion, params }) {
 
   // 텍스처 반복/오프셋/회전 변환
   useEffect(() => {
-    if (texture) updatePatternTextureTransform(texture, params);
-  }, [texture, params]);
+    if (texture) updatePatternTextureTransform(texture, params, geometry);
+  }, [geometry, texture, params]);
 
   // 패턴 파라미터·role·preset 변경으로 캔버스가 다시 그려지면 텍스처 갱신
   useEffect(() => {
     if (texture) texture.needsUpdate = true;
   }, [patternVersion, texture]);
 
+  const uvCheckerTexture = useMemo(() => createUvCheckerTexture(), []);
+  useEffect(() => () => uvCheckerTexture.dispose(), [uvCheckerTexture]);
+  useEffect(() => {
+    updatePatternTextureTransform(uvCheckerTexture, params, geometry);
+  }, [geometry, params, uvCheckerTexture]);
+
   // 머티리얼은 한 번 만들고 제자리 갱신 (map 유무 변화 시 재컴파일 처리 포함)
   const material = useMemo(() => createPatternMaterial(null, {}), []);
   useEffect(() => () => material.dispose(), [material]);
+  const activeTexture = params.stlShowUvChecker ? uvCheckerTexture : texture;
   useEffect(() => {
-    updatePatternMaterial(material, texture, params);
-  }, [material, texture, params]);
+    updatePatternMaterial(material, activeTexture, params);
+  }, [activeTexture, material, params]);
 
-  if (!geometry) return null;
-  return <mesh geometry={geometry} material={material} />;
+  const fitStlView = useCallback(() => {
+    if (!geometry || !camera.isPerspectiveCamera) return;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const sphere = geometry.boundingSphere;
+    const target = sphere.center.clone();
+    const radius = Math.max(sphere.radius, 0.01);
+    const aspect = Math.max(0.01, size.width / Math.max(1, size.height));
+    const distance = getPerspectiveFitDistance(radius, camera.fov, aspect);
+    const direction = camera.position.clone().sub(target);
+    if (direction.lengthSq() < 0.0001) direction.set(0, 0, 1);
+    direction.normalize();
+
+    camera.position.copy(target).addScaledVector(direction, distance);
+    camera.near = Math.max(0.01, distance / 100);
+    camera.far = Math.max(100, distance * 100);
+    camera.aspect = aspect;
+    camera.updateProjectionMatrix();
+
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(target);
+      controlsRef.current.update();
+    }
+    invalidate();
+  }, [camera, geometry, invalidate, size.height, size.width]);
+
+  useEffect(() => {
+    fitStlView();
+  }, [fitRequest, fitStlView, geometry]);
+
+  useEffect(() => {
+    if (!camera.isPerspectiveCamera) return;
+    camera.aspect = Math.max(0.01, size.width / Math.max(1, size.height));
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [camera, invalidate, size.height, size.width]);
+
+  return (
+    <>
+      {geometry && <mesh geometry={geometry} material={material} />}
+      <OrbitControls
+        ref={controlsRef}
+        enableDamping
+        dampingFactor={0.08}
+        autoRotate={false}
+        enablePan
+        minDistance={0.3}
+        maxDistance={30}
+      />
+    </>
+  );
 }
 
 /**
@@ -261,11 +345,34 @@ export default function MockupViewer({
   stlUrl,
   panelCollapsed,
   onTogglePanel,
+  onResetStlMapping,
 }) {
+  const [fitRequest, setFitRequest] = useState(0);
   const isCustomStl = params?.mockupMode === 'customStl';
   const meta = isCustomStl
-    ? `custom STL · ${resolveStlMappingMode(params?.stlMappingMode).label}`
+    ? `custom STL · ${params.stlMappingPreset} · ${params.stlProjectionAxis}`
     : 'monitor back panel';
+  const actions = isCustomStl ? (
+    <div className="mockup-viewer__actions" aria-label="STL 보기 조절">
+      <button
+        type="button"
+        onClick={() => setFitRequest((current) => current + 1)}
+        disabled={!stlUrl}
+        aria-label="STL 화면 맞춤"
+        title="STL 화면 맞춤"
+      >
+        화면 맞춤
+      </button>
+      <button
+        type="button"
+        onClick={onResetStlMapping}
+        aria-label="STL 매핑 리셋"
+        title="현재 프리셋 기준으로 매핑 초기화"
+      >
+        매핑 리셋
+      </button>
+    </div>
+  ) : null;
 
   return (
     <PreviewPanel
@@ -273,6 +380,7 @@ export default function MockupViewer({
       meta={meta}
       collapsed={panelCollapsed}
       onToggleCollapsed={onTogglePanel}
+      actions={actions}
     >
       <div className="preview-panel__body">
         {/* 접힌 동안 R3F Canvas를 unmount해 renderer를 정지/해제하고,
@@ -293,6 +401,7 @@ export default function MockupViewer({
                   patternCanvas={patternCanvas}
                   patternVersion={patternVersion}
                   params={params}
+                  fitRequest={fitRequest}
                 />
               )}
             </>
@@ -308,14 +417,15 @@ export default function MockupViewer({
               />
             </>
           )}
-          <OrbitControls
-            enableDamping
-            dampingFactor={0.08}
-            autoRotate={false}
-            enablePan={isCustomStl}
-            minDistance={isCustomStl ? 1.2 : 3.1}
-            maxDistance={isCustomStl ? 12 : 7}
-          />
+          {!isCustomStl && (
+            <OrbitControls
+              enableDamping
+              dampingFactor={0.08}
+              autoRotate={false}
+              minDistance={3.1}
+              maxDistance={7}
+            />
+          )}
         </Canvas>
         )}
         {!panelCollapsed && isCustomStl && !stlUrl && (
