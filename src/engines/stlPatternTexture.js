@@ -62,6 +62,22 @@ function getBakedDensity(params = {}) {
   };
 }
 
+function mergeStlHalftonePatternParams(params = {}) {
+  if (params.mode !== 'halftone') return params;
+
+  return {
+    ...params,
+    patternScale: (params.patternScale ?? 1) * (params.stlPatternScale ?? 1),
+    patternRepeatX: (params.patternRepeatX ?? 1)
+      * clampDensity(params.stlPatternRepeatX ?? DEFAULT_STL_DENSITY),
+    patternRepeatY: (params.patternRepeatY ?? 1)
+      * clampDensity(params.stlPatternRepeatY ?? DEFAULT_STL_DENSITY),
+    patternOffsetX: (params.patternOffsetX ?? 0) + (params.stlPatternOffsetX ?? 0),
+    patternOffsetY: (params.patternOffsetY ?? 0) + (params.stlPatternOffsetY ?? 0),
+    patternRotation: (params.patternRotation ?? 0) + (params.stlPatternRotation ?? 0),
+  };
+}
+
 function getTextureCanvasSize({
   params = {},
   width,
@@ -118,9 +134,13 @@ function scalePatternParams(params, referenceResolution) {
       * resolutionScale
       / averageDensity;
   }
+  const pixelScale = params.mode === 'halftone'
+    ? resolutionScale
+    : resolutionScale / averageDensity;
+
   PIXEL_SCALED_PARAM_KEYS.forEach((key) => {
     if (typeof params[key] === 'number') {
-      scaledParams[key] = (params[key] * resolutionScale) / averageDensity;
+      scaledParams[key] = params[key] * pixelScale;
     }
   });
   return scaledParams;
@@ -156,10 +176,10 @@ export function createStlPatternTextureCanvas({
     context.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  const renderParams = scalePatternParams({
+  const renderParams = scalePatternParams(mergeStlHalftonePatternParams({
     ...params,
     backgroundColor: params?.stlBaseColor ?? '#f2f2f2',
-  }, Math.max(canvas.width, canvas.height));
+  }), Math.max(canvas.width, canvas.height));
   const render = PATTERN_RENDERERS[params?.mode] ?? PATTERN_RENDERERS.vector;
   render(
     canvas,

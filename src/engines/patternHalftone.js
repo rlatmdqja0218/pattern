@@ -11,6 +11,85 @@
 
 import { getAverageColor } from './imageAnalysis';
 
+const DEG_TO_RAD = Math.PI / 180;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function positiveNumber(value, fallback, min = 0.0001) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.max(min, numericValue);
+}
+
+function wrap(value, size) {
+  return ((value % size) + size) % size;
+}
+
+function getFitScale(mode, canvasWidth, canvasHeight, sourceWidth, sourceHeight) {
+  const containScale = Math.min(canvasWidth / sourceWidth, canvasHeight / sourceHeight);
+  const coverScale = Math.max(canvasWidth / sourceWidth, canvasHeight / sourceHeight);
+  if (mode === 'contain') return containScale;
+  return coverScale;
+}
+
+function getHalftoneTransform(canvas, imageData, params) {
+  const { width: canvasWidth, height: canvasHeight } = canvas;
+  const fitMode = params.patternFitMode ?? 'cover';
+  const patternScale = positiveNumber(params.patternScale, 1, 0.05);
+  const repeatX = positiveNumber(params.patternRepeatX, 1, 0.05);
+  const repeatY = positiveNumber(params.patternRepeatY, 1, 0.05);
+  const fitScale = getFitScale(
+    fitMode,
+    canvasWidth,
+    canvasHeight,
+    imageData.width,
+    imageData.height,
+  );
+  const tileWidth = Math.max(1, (imageData.width * fitScale * patternScale) / repeatX);
+  const tileHeight = Math.max(1, (imageData.height * fitScale * patternScale) / repeatY);
+
+  return {
+    fitMode,
+    tileWidth,
+    tileHeight,
+    scaleX: tileWidth / imageData.width,
+    scaleY: tileHeight / imageData.height,
+    centerX: canvasWidth / 2,
+    centerY: canvasHeight / 2,
+    offsetX: (params.patternOffsetX ?? 0) * canvasWidth,
+    offsetY: (params.patternOffsetY ?? 0) * canvasHeight,
+    rotation: (params.patternRotation ?? 0) * DEG_TO_RAD,
+    shouldTile: fitMode === 'tile'
+      || Math.abs(repeatX - 1) > 0.001
+      || Math.abs(repeatY - 1) > 0.001,
+  };
+}
+
+function sampleHalftoneSource(imageData, canvasX, canvasY, sampleRadius, transform) {
+  const translatedX = canvasX - transform.centerX - transform.offsetX;
+  const translatedY = canvasY - transform.centerY - transform.offsetY;
+  const cos = Math.cos(-transform.rotation);
+  const sin = Math.sin(-transform.rotation);
+  const localX = (translatedX * cos) - (translatedY * sin);
+  const localY = (translatedX * sin) + (translatedY * cos);
+  const sourceX = ((localX + (transform.tileWidth / 2)) / transform.scaleX);
+  const sourceY = ((localY + (transform.tileHeight / 2)) / transform.scaleY);
+
+  let sx = sourceX;
+  let sy = sourceY;
+  if (transform.shouldTile) {
+    sx = wrap(sx, imageData.width);
+    sy = wrap(sy, imageData.height);
+  } else if (sx < 0 || sx >= imageData.width || sy < 0 || sy >= imageData.height) {
+    return null;
+  }
+
+  const sourceRadius = sampleRadius / Math.max(0.0001, (transform.scaleX + transform.scaleY) / 2);
+  return getAverageColor(imageData, sx, sy, sourceRadius);
+}
+
 /**
  * ImageData와 파라미터로부터 망점 점 데이터 배열을 생성한다.
  *
@@ -46,7 +125,7 @@ export function generateHalftoneDots(imageData, params) {
   const centerX = width / 2;
   const centerY = height / 2;
 
-  const rad = (angle * Math.PI) / 180;
+  const rad = angle * DEG_TO_RAD;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
@@ -91,7 +170,8 @@ export function generateHalftoneDots(imageData, params) {
 
 /**
  * 점 데이터를 생성해 캔버스에 렌더링한다.
- * 이미지 좌표계의 점들을 캔버스 크기에 맞춰 contain 방식으로 스케일링한다.
+ * 캔버스 전체를 점 그리드로 순회하고, 각 점 위치를 공통 pattern transform의
+ * 역변환으로 source image에 매핑해 샘플링한다.
  *
  * @param {HTMLCanvasElement} canvas 출력 대상 캔버스
  * @param {ImageData} imageData 분석용 픽셀 데이터
@@ -110,19 +190,43 @@ export function renderHalftone(canvas, imageData, params, extras = {}) {
     ctx.fillRect(0, 0, cw, ch);
   }
 
-  // 이미지 좌표계 → 캔버스 좌표계 (contain, 중앙 정렬)
-  const scale = Math.min(cw / imageData.width, ch / imageData.height);
-  const offsetX = (cw - imageData.width * scale) / 2;
-  const offsetY = (ch - imageData.height * scale) / 2;
-  ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+  const spacing = Math.max(1, params.dotSpacing ?? 10);
+  const minRadius = Math.max(0, params.minRadius ?? 0.4);
+  const maxRadius = Math.max(minRadius, params.maxRadius ?? 5.5);
+  const threshold = clamp(params.threshold ?? 0.04, 0, 1);
+  const range = Math.max(1e-6, 1 - threshold);
+  const gridAngle = (params.angle ?? 0) * DEG_TO_RAD;
+  const gridCos = Math.cos(gridAngle);
+  const gridSin = Math.sin(gridAngle);
+  const centerX = cw / 2;
+  const centerY = ch / 2;
+  const halfDiagonal = Math.hypot(cw, ch) / 2;
+  const start = -Math.ceil(halfDiagonal / spacing) * spacing;
+  const transform = getHalftoneTransform(canvas, imageData, params);
 
-  const dots = generateHalftoneDots(imageData, params);
-  ctx.fillStyle = params.foregroundColor;
-  for (const dot of dots) {
-    if (dot.color) ctx.fillStyle = dot.color;
-    ctx.beginPath();
-    ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
-    ctx.fill();
+  for (let gy = start; gy <= halfDiagonal; gy += spacing) {
+    for (let gx = start; gx <= halfDiagonal; gx += spacing) {
+      const x = centerX + (gx * gridCos) - (gy * gridSin);
+      const y = centerY + (gx * gridSin) + (gy * gridCos);
+      if (x < 0 || x >= cw || y < 0 || y >= ch) continue;
+
+      const sample = sampleHalftoneSource(imageData, x, y, spacing / 2, transform);
+      if (!sample) continue;
+
+      const intensity = params.invert ? sample.luminance : 1 - sample.luminance;
+      const normalized = (intensity - threshold) / range;
+      if (normalized <= 0) continue;
+
+      const radius = minRadius + ((maxRadius - minRadius) * Math.min(1, normalized));
+      if (radius <= 0) continue;
+
+      ctx.fillStyle = params.useSourceColor
+        ? `rgb(${Math.round(sample.r)}, ${Math.round(sample.g)}, ${Math.round(sample.b)})`
+        : params.foregroundColor;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);

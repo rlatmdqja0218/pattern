@@ -9,7 +9,9 @@ import { folder } from 'leva';
  */
 
 const CONTROL_GROUP_NAMES = [
+  '공통 패턴 조절',
   '패턴 만들기',
+  '하프톤 세부 조절',
   '벡터 추출 / 편집',
   '3D / UV 매핑',
   '고급 설정',
@@ -48,6 +50,35 @@ const flatPatternControlSchema = {
     value: 'vector',
     options: ['halftone', 'standard', 'mirror', 'vector'],
     label: '패턴 모드',
+  },
+  patternScale: {
+    value: 1, min: 0.1, max: 8, step: 0.05,
+    label: '패턴 크기',
+  },
+  patternRepeatX: {
+    value: 1, min: 0.2, max: 12, step: 0.1,
+    label: '패턴 반복 X',
+  },
+  patternRepeatY: {
+    value: 1, min: 0.2, max: 12, step: 0.1,
+    label: '패턴 반복 Y',
+  },
+  patternOffsetX: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: '패턴 X 이동',
+  },
+  patternOffsetY: {
+    value: 0, min: -1, max: 1, step: 0.01,
+    label: '패턴 Y 이동',
+  },
+  patternRotation: {
+    value: 0, min: -180, max: 180, step: 1,
+    label: '패턴 회전',
+  },
+  patternFitMode: {
+    value: 'cover',
+    options: ['contain', 'cover', 'tile'],
+    label: '패턴 맞춤',
   },
 
   // — Halftone(망점) 전용 —
@@ -477,18 +508,23 @@ const flatPatternControlSchema = {
 
 /** Leva useControls에 전달하는 사용자-facing 구조 */
 export const patternControlSchema = {
-  '패턴 만들기': folder(
+  '공통 패턴 조절': folder(
     pickControls([
       'mode',
+      'patternScale',
+      'patternRepeatX',
+      'patternRepeatY',
+      'patternOffsetX',
+      'patternOffsetY',
+      'patternRotation',
+      'patternFitMode',
+      'backgroundColor',
+    ]),
+    { collapsed: false },
+  ),
+  '패턴 만들기': folder(
+    pickControls([
       'patternPreset',
-      'dotSpacing',
-      'minRadius',
-      'maxRadius',
-      'threshold',
-      'invert',
-      'angle',
-      'foregroundColor',
-      'useSourceColor',
       'tileScale',
       'tileSpacing',
       'motifScale',
@@ -503,7 +539,19 @@ export const patternControlSchema = {
       'primaryOpacity',
       'secondaryOpacity',
       'accentOpacity',
-      'backgroundColor',
+    ]),
+    { collapsed: false },
+  ),
+  '하프톤 세부 조절': folder(
+    pickControls([
+      'dotSpacing',
+      'minRadius',
+      'maxRadius',
+      'threshold',
+      'invert',
+      'angle',
+      'foregroundColor',
+      'useSourceColor',
     ]),
     { collapsed: false },
   ),

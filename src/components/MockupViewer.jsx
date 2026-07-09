@@ -47,6 +47,9 @@ const BAKED_STL_TEXTURE_PARAM_KEYS = new Set([
   'stlPatternScale',
   'stlPatternRepeatX',
   'stlPatternRepeatY',
+  'stlPatternOffsetX',
+  'stlPatternOffsetY',
+  'stlPatternRotation',
 ]);
 
 function clampControlSpeed(value) {

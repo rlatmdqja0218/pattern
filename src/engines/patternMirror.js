@@ -10,6 +10,12 @@ import { getSourceCanvas } from './sourceCanvas';
 
 const MIN_TILE_SIZE = 8;
 
+function positiveNumber(value, fallback, min = 0.0001) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.max(min, numericValue);
+}
+
 function drawFlippedImage(ctx, source, x, y, width, height, flipX, flipY) {
   ctx.save();
   ctx.translate(x + (flipX < 0 ? width : 0), y + (flipY < 0 ? height : 0));
@@ -51,15 +57,25 @@ export function renderMirror(canvas, imageData, params, extras = {}) {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  const tileWidth = Math.max(MIN_TILE_SIZE, imageData.width * params.tileScale);
-  const tileHeight = Math.max(MIN_TILE_SIZE, imageData.height * params.tileScale);
+  const patternScale = positiveNumber(params.patternScale, 1, 0.05);
+  const repeatX = positiveNumber(params.patternRepeatX, 1, 0.05);
+  const repeatY = positiveNumber(params.patternRepeatY, 1, 0.05);
+  const tileWidth = Math.max(MIN_TILE_SIZE, imageData.width * params.tileScale * patternScale);
+  const tileHeight = Math.max(MIN_TILE_SIZE, imageData.height * params.tileScale * patternScale);
   // 메타 타일은 원본 타일의 2x2 크기
-  const strideX = Math.max(MIN_TILE_SIZE, tileWidth * 2 + params.tileSpacing);
-  const strideY = Math.max(MIN_TILE_SIZE, tileHeight * 2 + params.tileSpacing);
+  const strideX = Math.max(MIN_TILE_SIZE, (tileWidth * 2 + params.tileSpacing) / repeatX);
+  const strideY = Math.max(MIN_TILE_SIZE, (tileHeight * 2 + params.tileSpacing) / repeatY);
+  const diagonal = Math.hypot(cw, ch);
+  const offsetX = (params.patternOffsetX ?? 0) * cw;
+  const offsetY = (params.patternOffsetY ?? 0) * ch;
 
-  for (let y = -strideY; y < ch + strideY; y += strideY) {
-    for (let x = -strideX; x < cw + strideX; x += strideX) {
+  ctx.save();
+  ctx.translate((cw / 2) + offsetX, (ch / 2) + offsetY);
+  ctx.rotate(((params.patternRotation ?? 0) * Math.PI) / 180);
+  for (let y = -diagonal - strideY; y < diagonal + strideY; y += strideY) {
+    for (let x = -diagonal - strideX; x < diagonal + strideX; x += strideX) {
       drawMirrorMetaTile(ctx, source, x, y, tileWidth, tileHeight);
     }
   }
+  ctx.restore();
 }

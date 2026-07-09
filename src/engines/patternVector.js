@@ -5,6 +5,26 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function positiveNumber(value, fallback, min = 0.0001) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return fallback;
+  return Math.max(min, numericValue);
+}
+
+function getVectorPatternParams(params) {
+  const patternScale = positiveNumber(params.patternScale, 1, 0.05);
+  const repeatX = positiveNumber(params.patternRepeatX, 1, 0.05);
+  const repeatY = positiveNumber(params.patternRepeatY, 1, 0.05);
+
+  return {
+    ...params,
+    motifScale: Math.max(0.01, (params.motifScale ?? 0.55) * patternScale),
+    motifSpacingX: Math.max(0, (params.motifSpacingX ?? 56) / repeatX),
+    motifSpacingY: Math.max(0, (params.motifSpacingY ?? 48) / repeatY),
+    motifRotation: (params.motifRotation ?? 0) + (params.patternRotation ?? 0),
+  };
+}
+
 function getAbsoluteSegment(segment) {
   return {
     point: segment.point,
@@ -516,8 +536,9 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
     transparentBackground = false,
   } = extras;
   const { width: cw, height: ch } = canvas;
-  const palette = getPalette(params);
-  const backgroundColor = (params.patternStyle === 'engrave' && params.engraveBackground)
+  const renderParams = getVectorPatternParams(params);
+  const palette = getPalette(renderParams);
+  const backgroundColor = (renderParams.patternStyle === 'engrave' && renderParams.engraveBackground)
     ? mixColor(palette.background, getEngraveColor(palette.background), 0.12)
     : palette.background;
 
@@ -532,40 +553,44 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
   const motifEntries = getMotifEntries(editablePath, selectedMotifs);
   if (!motifEntries.length) return;
 
-  const scale = Math.max(0.01, params.motifScale);
-  const assemblyMode = params.motifAssemblyMode ?? 'fragment';
+  const scale = Math.max(0.01, renderParams.motifScale);
+  const assemblyMode = renderParams.motifAssemblyMode ?? 'fragment';
   const preserveLayout = hasSelectedMotifPaths(selectedMotifs)
     && (
       assemblyMode === 'reconstruct'
-      || (params.motifLayoutMode ?? 'preserveLayout') === 'preserveLayout'
+      || (renderParams.motifLayoutMode ?? 'preserveLayout') === 'preserveLayout'
     );
-  const preserveRoleScale = preserveLayout && params.preserveRoleScale === true;
-  const groupScaleMode = params.groupScaleMode ?? 'wholeGroup';
+  const preserveRoleScale = preserveLayout && renderParams.preserveRoleScale === true;
+  const groupScaleMode = renderParams.groupScaleMode ?? 'wholeGroup';
   const maxRoleScale = preserveRoleScale
-    ? Math.max(...motifEntries.map(({ role }) => getRoleStyle(role, params).scale))
+    ? Math.max(...motifEntries.map(({ role }) => getRoleStyle(role, renderParams).scale))
     : 1;
   const groupBounds = preserveLayout ? getCombinedBounds(motifEntries) : null;
   const motifWidth = preserveLayout
     ? groupBounds.width * scale * maxRoleScale
     : Math.max(
       ...motifEntries.map(({ bounds, role, index }) => (
-        bounds.width * scale * getRoleStyle(role, params).scale
+        bounds.width * scale * getRoleStyle(role, renderParams).scale
       ) + (index * 12)),
     );
   const motifHeight = preserveLayout
     ? groupBounds.height * scale * maxRoleScale
     : Math.max(
       ...motifEntries.map(({ bounds, role, index }) => (
-        bounds.height * scale * getRoleStyle(role, params).scale
+        bounds.height * scale * getRoleStyle(role, renderParams).scale
       ) + (index * 6)),
     );
-  const strideX = Math.max(MIN_STRIDE, motifWidth + params.motifSpacingX);
-  const strideY = Math.max(MIN_STRIDE, motifHeight + params.motifSpacingY);
-  const grammarPadding = getGrammarPadding(params, ch, strideY);
-  const startX = -strideX - grammarPadding;
-  const startY = -strideY - grammarPadding;
-  const endX = cw + strideX + grammarPadding;
-  const endY = ch + strideY + grammarPadding;
+  const strideX = Math.max(MIN_STRIDE, motifWidth + renderParams.motifSpacingX);
+  const strideY = Math.max(MIN_STRIDE, motifHeight + renderParams.motifSpacingY);
+  const grammarPadding = getGrammarPadding(renderParams, ch, strideY);
+  const offsetX = (renderParams.patternOffsetX ?? 0) * cw;
+  const offsetY = (renderParams.patternOffsetY ?? 0) * ch;
+  const offsetPaddingX = Math.abs(offsetX);
+  const offsetPaddingY = Math.abs(offsetY);
+  const startX = -strideX - grammarPadding - offsetPaddingX;
+  const startY = -strideY - grammarPadding - offsetPaddingY;
+  const endX = cw + strideX + grammarPadding + offsetPaddingX;
+  const endY = ch + strideY + grammarPadding + offsetPaddingY;
 
   for (let rowIndex = 0, y = startY; y < endY; rowIndex += 1, y += strideY) {
     for (let columnIndex = 0, x = startX; x < endX; columnIndex += 1, x += strideX) {
@@ -579,16 +604,16 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
           strideX,
           canvasWidth: cw,
           canvasHeight: ch,
-          params,
+          params: renderParams,
         });
 
         drawMotifGroup(
           ctx,
           motifEntries,
           groupBounds,
-          x + strideX / 2,
-          y + strideY / 2,
-          params,
+          x + strideX / 2 + offsetX,
+          y + strideY / 2 + offsetY,
+          renderParams,
           cellTransform,
           { preserveRoleScale, groupScaleMode },
         );
@@ -607,16 +632,16 @@ export function renderVectorPattern(canvas, _imageData, params, extras = {}) {
           strideX,
           canvasWidth: cw,
           canvasHeight: ch,
-          params,
+          params: renderParams,
         });
 
         drawMotif(
           ctx,
           path,
           bounds,
-          x + strideX / 2,
-          y + strideY / 2,
-          params,
+          x + strideX / 2 + offsetX,
+          y + strideY / 2 + offsetY,
+          renderParams,
           role,
           index,
           cellTransform,
