@@ -34,6 +34,46 @@ const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternRotation: 0,
 };
 const CUSTOM_STL_DEFAULT_CAMERA_POSITION = new THREE.Vector3(0.2, 0.25, 5.1);
+const MONITOR_MOCKUP_TARGET = new THREE.Vector3(0, 0, 0);
+const MONITOR_MOCKUP_RADIUS = 2.7;
+const VIEW_PRESETS = [
+  {
+    key: 'top',
+    label: 'Top',
+    direction: new THREE.Vector3(0, 1, 0),
+    up: new THREE.Vector3(0, 0, -1),
+  },
+  {
+    key: 'right',
+    label: 'Right',
+    direction: new THREE.Vector3(1, 0, 0),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  {
+    key: 'left',
+    label: 'Left',
+    direction: new THREE.Vector3(-1, 0, 0),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  {
+    key: 'front',
+    label: 'Front',
+    direction: new THREE.Vector3(0, 0, 1),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  {
+    key: 'back',
+    label: 'Back',
+    direction: new THREE.Vector3(0, 0, -1),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  {
+    key: 'under',
+    label: 'Under',
+    direction: new THREE.Vector3(0, -1, 0),
+    up: new THREE.Vector3(0, 0, 1),
+  },
+];
 
 const STL_TEXTURE_PARAM_KEYS = new Set([
   'stlTextureResolution',
@@ -77,6 +117,45 @@ function syncControlsTarget(controls, target, saveState = false) {
   }
   if (typeof controls.update === 'function') controls.update();
   if (saveState && typeof controls.saveState === 'function') controls.saveState();
+}
+
+function getViewPreset(viewName) {
+  return VIEW_PRESETS.find((preset) => preset.key === viewName)
+    ?? VIEW_PRESETS.find((preset) => preset.key === 'front');
+}
+
+function applyPresetCameraView({
+  camera,
+  controls,
+  target,
+  radius,
+  aspect,
+  viewName,
+  invalidate,
+}) {
+  if (!camera?.isPerspectiveCamera) return false;
+
+  const preset = getViewPreset(viewName);
+  const safeTarget = target.clone();
+  const safeAspect = Math.max(0.01, aspect ?? camera.aspect ?? 1);
+  const distance = getPerspectiveFitDistance(
+    Math.max(radius, 0.01),
+    camera.fov,
+    safeAspect,
+  );
+
+  camera.position.copy(safeTarget).addScaledVector(preset.direction, distance);
+  camera.up.copy(preset.up);
+  camera.zoom = 1;
+  camera.near = Math.max(0.01, distance / 100);
+  camera.far = Math.max(100, distance * 100);
+  camera.aspect = safeAspect;
+  camera.lookAt(safeTarget);
+  camera.updateProjectionMatrix();
+
+  syncControlsTarget(controls, safeTarget, true);
+  invalidate?.();
+  return true;
 }
 
 function getOrbitMouseButtons(controlMode, spacePanActive) {
@@ -175,17 +254,43 @@ function getStlMappingMeta(params = {}) {
   ].join(' · ');
 }
 
-function MockupCaptureBridge({ captureRef }) {
-  const { gl, scene, camera } = useThree();
+function MockupCaptureBridge({ captureRef, viewApiRef }) {
+  const {
+    gl,
+    scene,
+    camera,
+    size,
+    invalidate,
+  } = useThree();
 
   useEffect(() => {
     captureRef.current = { gl, scene, camera };
+    viewApiRef.current = {
+      gl,
+      scene,
+      camera,
+      size,
+      invalidate,
+    };
     return () => {
       if (captureRef.current?.gl === gl) {
         captureRef.current = null;
       }
+      if (viewApiRef.current?.gl === gl) {
+        viewApiRef.current = null;
+      }
     };
-  }, [camera, captureRef, gl, scene]);
+  }, [
+    camera,
+    captureRef,
+    gl,
+    invalidate,
+    scene,
+    size,
+    size.height,
+    size.width,
+    viewApiRef,
+  ]);
 
   return null;
 }
@@ -329,6 +434,7 @@ function CustomStlMockup({
   params,
   fitRequest,
   viewResetRequest,
+  viewPresetRequest,
   spacePanActive,
   onSurfaceAspectChange,
 }) {
@@ -510,6 +616,26 @@ function CustomStlMockup({
     invalidate();
   }, [camera, geometry, invalidate, size.height, size.width]);
 
+  const setPresetStlView = useCallback((viewName) => {
+    if (!geometry || !camera.isPerspectiveCamera) return;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const sphere = geometry.boundingSphere;
+    const target = sphere.center.clone();
+    const radius = Math.max(sphere.radius, 0.01);
+    const aspect = Math.max(0.01, size.width / Math.max(1, size.height));
+    applyPresetCameraView({
+      camera,
+      controls: controlsRef.current,
+      target,
+      radius,
+      aspect,
+      viewName,
+      invalidate,
+    });
+  }, [camera, geometry, invalidate, size.height, size.width]);
+
   // fit/reset은 요청 카운터와 geometry 로드 시에만 실행한다.
   // (fitStlView 자체는 size에 의존하므로 콜백 identity 변화가
   //  effect를 재실행시키지 않도록 ref로 참조 — 패널 리사이즈/splitter
@@ -518,6 +644,8 @@ function CustomStlMockup({
   fitStlViewRef.current = fitStlView;
   const resetStlViewRef = useRef(resetStlView);
   resetStlViewRef.current = resetStlView;
+  const presetStlViewRef = useRef(setPresetStlView);
+  presetStlViewRef.current = setPresetStlView;
 
   useEffect(() => {
     fitStlViewRef.current();
@@ -526,6 +654,12 @@ function CustomStlMockup({
   useEffect(() => {
     if (viewResetRequest > 0) resetStlViewRef.current();
   }, [viewResetRequest]);
+
+  useEffect(() => {
+    if (viewPresetRequest?.nonce) {
+      presetStlViewRef.current(viewPresetRequest.viewName);
+    }
+  }, [viewPresetRequest]);
 
   // 컨트롤 target 동기화는 geometry가 처음 로드될 때만 허용한다.
   // (controlMode 전환·spacePan 토글·마우스업에서 재호출되면 뷰가 튄다.
@@ -646,9 +780,12 @@ const MockupViewer = forwardRef(function MockupViewer({
 }, ref) {
   const [fitRequest, setFitRequest] = useState(0);
   const [viewResetRequest, setViewResetRequest] = useState(0);
+  const [viewPresetRequest, setViewPresetRequest] = useState(null);
   const [isStlPanelHovered, setIsStlPanelHovered] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const captureRef = useRef(null);
+  const viewApiRef = useRef(null);
+  const monitorControlsRef = useRef(null);
   const isCustomStl = params?.mockupMode === 'customStl';
   const canControlStlView = isCustomStl && !panelCollapsed && Boolean(stlUrl);
   const meta = isCustomStl
@@ -671,6 +808,92 @@ const MockupViewer = forwardRef(function MockupViewer({
     downloadPng,
     hasCanvas: () => !panelCollapsed && Boolean(captureRef.current),
   }), [downloadPng, panelCollapsed]);
+
+  const fitMonitorView = useCallback(() => {
+    const api = viewApiRef.current;
+    if (!api?.camera?.isPerspectiveCamera) return;
+    const target = MONITOR_MOCKUP_TARGET.clone();
+    const direction = api.camera.position.clone().sub(target);
+    if (direction.lengthSq() < 0.0001) {
+      direction.copy(CUSTOM_STL_DEFAULT_CAMERA_POSITION);
+    }
+    direction.normalize();
+
+    const aspect = Math.max(0.01, api.size.width / Math.max(1, api.size.height));
+    const distance = getPerspectiveFitDistance(
+      MONITOR_MOCKUP_RADIUS,
+      api.camera.fov,
+      aspect,
+    );
+
+    api.camera.position.copy(target).addScaledVector(direction, distance);
+    api.camera.near = Math.max(0.01, distance / 100);
+    api.camera.far = Math.max(100, distance * 100);
+    api.camera.aspect = aspect;
+    api.camera.lookAt(target);
+    api.camera.updateProjectionMatrix();
+    syncControlsTarget(monitorControlsRef.current, target, true);
+    api.invalidate?.();
+  }, []);
+
+  const resetMonitorView = useCallback(() => {
+    const api = viewApiRef.current;
+    if (!api?.camera?.isPerspectiveCamera) return;
+    const target = MONITOR_MOCKUP_TARGET.clone();
+    const aspect = Math.max(0.01, api.size.width / Math.max(1, api.size.height));
+
+    api.camera.position.copy(CUSTOM_STL_DEFAULT_CAMERA_POSITION);
+    api.camera.up.set(0, 1, 0);
+    api.camera.zoom = 1;
+    api.camera.near = 0.01;
+    api.camera.far = 100;
+    api.camera.aspect = aspect;
+    api.camera.lookAt(target);
+    api.camera.updateProjectionMatrix();
+    syncControlsTarget(monitorControlsRef.current, target, true);
+    api.invalidate?.();
+  }, []);
+
+  const setMonitorPresetView = useCallback((viewName) => {
+    const api = viewApiRef.current;
+    if (!api?.camera?.isPerspectiveCamera) return;
+    applyPresetCameraView({
+      camera: api.camera,
+      controls: monitorControlsRef.current,
+      target: MONITOR_MOCKUP_TARGET,
+      radius: MONITOR_MOCKUP_RADIUS,
+      aspect: Math.max(0.01, api.size.width / Math.max(1, api.size.height)),
+      viewName,
+      invalidate: api.invalidate,
+    });
+  }, []);
+
+  const handlePresetView = useCallback((viewName) => {
+    if (isCustomStl) {
+      setViewPresetRequest((current) => ({
+        viewName,
+        nonce: (current?.nonce ?? 0) + 1,
+      }));
+      return;
+    }
+    setMonitorPresetView(viewName);
+  }, [isCustomStl, setMonitorPresetView]);
+
+  const handleFitView = useCallback(() => {
+    if (isCustomStl) {
+      setFitRequest((current) => current + 1);
+      return;
+    }
+    fitMonitorView();
+  }, [fitMonitorView, isCustomStl]);
+
+  const handleResetView = useCallback(() => {
+    if (isCustomStl) {
+      setViewResetRequest((current) => current + 1);
+      return;
+    }
+    resetMonitorView();
+  }, [isCustomStl, resetMonitorView]);
 
   useEffect(() => {
     if (!canControlStlView || !isStlPanelHovered) {
@@ -715,54 +938,72 @@ const MockupViewer = forwardRef(function MockupViewer({
     };
   }, [canControlStlView, isStlPanelHovered]);
 
-  const actions = isCustomStl ? (
-    <div className="mockup-viewer__actions" aria-label="STL 보기 조절">
-      <div className="mockup-viewer__mode-switch" aria-label="STL 조작 방식">
-        {[
-          ['orbit', '궤도'],
-          ['pan', '이동'],
-          ['freeRotate', '자유회전'],
-        ].map(([mode, label]) => (
+  const actions = (
+    <div className="mockup-viewer__actions" aria-label="3D 보기 조절">
+      <div className="mockup-viewer__preset-switch" aria-label="뷰 프리셋">
+        {VIEW_PRESETS.map(({ key, label }) => (
           <button
-            key={mode}
+            key={key}
             type="button"
-            className={activeStlControlMode === mode ? 'is-active' : ''}
-            onClick={() => onSetStlControlMode?.(mode)}
-            aria-pressed={activeStlControlMode === mode}
-            title={`STL 조작 방식: ${label}`}
+            onClick={() => handlePresetView(key)}
+            disabled={isCustomStl && !stlUrl}
+            aria-label={`${label} view`}
+            title={`${label} view`}
           >
             {label}
           </button>
         ))}
       </div>
+      {isCustomStl && (
+        <div className="mockup-viewer__mode-switch" aria-label="STL 조작 방식">
+          {[
+            ['orbit', '궤도'],
+            ['pan', '이동'],
+            ['freeRotate', '자유회전'],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className={activeStlControlMode === mode ? 'is-active' : ''}
+              onClick={() => onSetStlControlMode?.(mode)}
+              aria-pressed={activeStlControlMode === mode}
+              title={`STL 조작 방식: ${label}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <button
         type="button"
-        onClick={() => setFitRequest((current) => current + 1)}
-        disabled={!stlUrl}
+        onClick={handleFitView}
+        disabled={isCustomStl && !stlUrl}
         aria-label="STL 화면 맞춤"
-        title="STL 화면 맞춤"
+        title="화면 맞춤"
       >
         화면 맞춤
       </button>
       <button
         type="button"
-        onClick={onResetStlMapping}
-        aria-label="STL 매핑 리셋"
-        title="현재 프리셋 기준으로 매핑 초기화"
-      >
-        매핑 리셋
-      </button>
-      <button
-        type="button"
-        onClick={() => setViewResetRequest((current) => current + 1)}
-        disabled={!stlUrl}
-        aria-label="STL 뷰 리셋"
+        onClick={handleResetView}
+        disabled={isCustomStl && !stlUrl}
+        aria-label="3D 뷰 리셋"
         title="카메라와 이동 상태를 초기 보기로 복구"
       >
         뷰 리셋
       </button>
+      {isCustomStl && (
+        <button
+          type="button"
+          onClick={onResetStlMapping}
+          aria-label="STL 매핑 리셋"
+          title="현재 프리셋 기준으로 매핑 초기화"
+        >
+          매핑 리셋
+        </button>
+      )}
     </div>
-  ) : null;
+  );
 
   return (
     <PreviewPanel
@@ -789,7 +1030,7 @@ const MockupViewer = forwardRef(function MockupViewer({
           camera={{ position: [0.2, 0.25, 5.1], fov: 38 }}
           gl={{ preserveDrawingBuffer: true }}
         >
-          <MockupCaptureBridge captureRef={captureRef} />
+          <MockupCaptureBridge captureRef={captureRef} viewApiRef={viewApiRef} />
           <color attach="background" args={['#101317']} />
           {isCustomStl ? (
             <>
@@ -807,6 +1048,7 @@ const MockupViewer = forwardRef(function MockupViewer({
                   params={params}
                   fitRequest={fitRequest}
                   viewResetRequest={viewResetRequest}
+                  viewPresetRequest={viewPresetRequest}
                   spacePanActive={spacePanActive}
                   onSurfaceAspectChange={onStlSurfaceAspectChange}
                 />
@@ -826,6 +1068,7 @@ const MockupViewer = forwardRef(function MockupViewer({
           )}
           {!isCustomStl && (
             <OrbitControls
+              ref={monitorControlsRef}
               enableDamping
               dampingFactor={0.08}
               autoRotate={false}
