@@ -373,6 +373,23 @@ export const patternControlSchema = {
     options: ['bakedSurface', 'tileRepeat'],
     label: 'STL 텍스처 방식', render: isCustomStl,
   },
+  stlControlMode: {
+    value: 'orbit',
+    options: ['orbit', 'pan', 'freeRotate'],
+    label: 'STL 조작 방식', render: isCustomStl,
+  },
+  stlPanSpeed: {
+    value: 1, min: 0.1, max: 3, step: 0.1,
+    label: 'STL 이동 속도', render: isCustomStl,
+  },
+  stlRotateSpeed: {
+    value: 1, min: 0.1, max: 3, step: 0.1,
+    label: 'STL 회전 속도', render: isCustomStl,
+  },
+  stlZoomSpeed: {
+    value: 1, min: 0.1, max: 3, step: 0.1,
+    label: 'STL 줌 속도', render: isCustomStl,
+  },
   stlPatternScale: {
     value: 1, min: 0.1, max: 10, step: 0.05,
     label: 'STL 패턴 크기', render: isCustomStl,

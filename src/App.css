@@ -224,6 +224,11 @@
   opacity: 0.35;
 }
 
+.mockup-viewer__interaction-layer {
+  position: absolute;
+  inset: 0;
+}
+
 .preview-panel__content {
   display: flex;
   flex: 1;

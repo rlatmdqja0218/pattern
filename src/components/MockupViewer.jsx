@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { OrbitControls } from '@react-three/drei';
+import { ArcballControls, OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -28,6 +28,7 @@ const DEFAULT_MOCKUP_PARAMS = {
   mockupPatternOffsetY: 0,
   mockupPatternRotation: 0,
 };
+const CUSTOM_STL_DEFAULT_CAMERA_POSITION = new THREE.Vector3(0.2, 0.25, 5.1);
 
 const STL_TEXTURE_PARAM_KEYS = new Set([
   'stlTextureResolution',
@@ -40,6 +41,48 @@ const BAKED_STL_TEXTURE_PARAM_KEYS = new Set([
   'stlPatternRepeatX',
   'stlPatternRepeatY',
 ]);
+
+function clampControlSpeed(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 1;
+  return Math.min(3, Math.max(0.1, numericValue));
+}
+
+function isEditableKeyboardTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable
+    || tagName === 'input'
+    || tagName === 'select'
+    || tagName === 'textarea'
+    || Boolean(target.closest('.leva-c-kWgxhW'));
+}
+
+function syncControlsTarget(controls, target, saveState = false) {
+  if (!controls) return;
+  if (typeof controls.setTarget === 'function') {
+    controls.setTarget(target.x, target.y, target.z);
+  } else if (controls.target) {
+    controls.target.copy(target);
+  }
+  if (typeof controls.update === 'function') controls.update();
+  if (saveState && typeof controls.saveState === 'function') controls.saveState();
+}
+
+function getOrbitMouseButtons(controlMode, spacePanActive) {
+  if (controlMode === 'pan' || spacePanActive) {
+    return {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
+  }
+  return {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  };
+}
 
 function getStlTextureRenderParams(params) {
   const isBakedSurface = (params.stlTextureMappingMode ?? 'bakedSurface') === 'bakedSurface';
@@ -224,6 +267,8 @@ function CustomStlMockup({
   selectedMotifs = [],
   params,
   fitRequest,
+  viewResetRequest,
+  spacePanActive,
 }) {
   const [geometry, setGeometry] = useState(null);
   const controlsRef = useRef(null);
@@ -248,6 +293,14 @@ function CustomStlMockup({
   ]);
   const mappingOptionsRef = useRef(mappingOptions);
   mappingOptionsRef.current = mappingOptions;
+  const controlMode = params.stlControlMode ?? 'orbit';
+  const panSpeed = clampControlSpeed(params.stlPanSpeed);
+  const rotateSpeed = clampControlSpeed(params.stlRotateSpeed);
+  const zoomSpeed = clampControlSpeed(params.stlZoomSpeed);
+  const orbitMouseButtons = useMemo(
+    () => getOrbitMouseButtons(controlMode, spacePanActive),
+    [controlMode, spacePanActive],
+  );
 
   // STL 로드 → 노멀/센터/스케일 정규화 → 초기 UV 생성
   useEffect(() => {
@@ -351,15 +404,90 @@ function CustomStlMockup({
     camera.updateProjectionMatrix();
 
     if (controlsRef.current) {
-      controlsRef.current.target.copy(target);
-      controlsRef.current.update();
+      syncControlsTarget(controlsRef.current, target, true);
     }
+    invalidate();
+  }, [camera, geometry, invalidate, size.height, size.width]);
+
+  const resetStlView = useCallback(() => {
+    if (!geometry || !camera.isPerspectiveCamera) return;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const sphere = geometry.boundingSphere;
+    const target = sphere.center.clone();
+    const radius = Math.max(sphere.radius, 0.01);
+    const aspect = Math.max(0.01, size.width / Math.max(1, size.height));
+    const distance = getPerspectiveFitDistance(radius, camera.fov, aspect);
+    const direction = CUSTOM_STL_DEFAULT_CAMERA_POSITION.clone().normalize();
+
+    camera.position.copy(target).addScaledVector(direction, distance);
+    camera.up.set(0, 1, 0);
+    camera.zoom = 1;
+    camera.near = Math.max(0.01, distance / 100);
+    camera.far = Math.max(100, distance * 100);
+    camera.aspect = aspect;
+    camera.lookAt(target);
+    camera.updateProjectionMatrix();
+
+    syncControlsTarget(controlsRef.current, target, true);
     invalidate();
   }, [camera, geometry, invalidate, size.height, size.width]);
 
   useEffect(() => {
     fitStlView();
   }, [fitRequest, fitStlView, geometry]);
+
+  useEffect(() => {
+    if (viewResetRequest > 0) resetStlView();
+  }, [resetStlView, viewResetRequest]);
+
+  useEffect(() => {
+    if (!geometry) return;
+    geometry.computeBoundingSphere();
+    syncControlsTarget(controlsRef.current, geometry.boundingSphere.center, true);
+    invalidate();
+  }, [controlMode, geometry, invalidate]);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    controls.enablePan = true;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+    controls.minDistance = 0.3;
+    controls.maxDistance = 30;
+
+    if ('screenSpacePanning' in controls) controls.screenSpacePanning = true;
+    if ('enableDamping' in controls) controls.enableDamping = true;
+    if ('dampingFactor' in controls) controls.dampingFactor = 0.08;
+    if ('rotateSpeed' in controls) controls.rotateSpeed = rotateSpeed;
+    if ('panSpeed' in controls) controls.panSpeed = panSpeed;
+    if ('zoomSpeed' in controls) controls.zoomSpeed = zoomSpeed;
+
+    if (typeof controls.setMouseAction === 'function') {
+      controls.setMouseAction(spacePanActive ? 'PAN' : 'ROTATE', 0);
+      controls.setMouseAction('PAN', 0, 'SHIFT');
+      controls.setMouseAction('PAN', 2);
+      controls.setMouseAction('ZOOM', 'WHEEL');
+      controls.setMouseAction('ZOOM', 1);
+      controls.scaleFactor = 1 + (zoomSpeed * 0.08);
+      controls.wMax = 12 + (rotateSpeed * 8);
+      controls.dampingFactor = 18 + ((3 - rotateSpeed) * 3);
+      controls.cursorZoom = false;
+    }
+
+    if (typeof controls.update === 'function') controls.update();
+    invalidate();
+  }, [
+    controlMode,
+    invalidate,
+    panSpeed,
+    rotateSpeed,
+    spacePanActive,
+    zoomSpeed,
+  ]);
 
   useEffect(() => {
     if (!camera.isPerspectiveCamera) return;
@@ -371,15 +499,39 @@ function CustomStlMockup({
   return (
     <>
       {geometry && <mesh geometry={geometry} material={material} />}
-      <OrbitControls
-        ref={controlsRef}
-        enableDamping
-        dampingFactor={0.08}
-        autoRotate={false}
-        enablePan
-        minDistance={0.3}
-        maxDistance={30}
-      />
+      {controlMode === 'freeRotate' ? (
+        <ArcballControls
+          ref={controlsRef}
+          enablePan
+          enableRotate
+          enableZoom
+          enableAnimations
+          enableGrid={false}
+          cursorZoom={false}
+          minDistance={0.3}
+          maxDistance={30}
+          scaleFactor={1 + (zoomSpeed * 0.08)}
+          wMax={12 + (rotateSpeed * 8)}
+          dampingFactor={18 + ((3 - rotateSpeed) * 3)}
+        />
+      ) : (
+        <OrbitControls
+          ref={controlsRef}
+          enableDamping
+          dampingFactor={0.08}
+          autoRotate={false}
+          enablePan
+          enableRotate
+          enableZoom
+          screenSpacePanning
+          mouseButtons={orbitMouseButtons}
+          rotateSpeed={rotateSpeed}
+          panSpeed={panSpeed}
+          zoomSpeed={zoomSpeed}
+          minDistance={0.3}
+          maxDistance={30}
+        />
+      )}
     </>
   );
 }
@@ -401,10 +553,58 @@ export default function MockupViewer({
   onResetStlMapping,
 }) {
   const [fitRequest, setFitRequest] = useState(0);
+  const [viewResetRequest, setViewResetRequest] = useState(0);
+  const [isStlPanelHovered, setIsStlPanelHovered] = useState(false);
+  const [spacePanActive, setSpacePanActive] = useState(false);
   const isCustomStl = params?.mockupMode === 'customStl';
+  const canControlStlView = isCustomStl && !panelCollapsed && Boolean(stlUrl);
   const meta = isCustomStl
     ? `custom STL · ${params.stlMappingPreset} · ${params.stlTextureMappingMode} · ${params.stlTextureResolution}px`
     : 'monitor back panel';
+
+  useEffect(() => {
+    if (!canControlStlView || !isStlPanelHovered) {
+      setSpacePanActive(false);
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (isEditableKeyboardTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+
+      if (key === ' ') {
+        event.preventDefault();
+        setSpacePanActive(true);
+        return;
+      }
+
+      if (key === 'f') {
+        event.preventDefault();
+        setFitRequest((current) => current + 1);
+        return;
+      }
+
+      if (key === 'r') {
+        event.preventDefault();
+        setViewResetRequest((current) => current + 1);
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      if (event.key === ' ') {
+        event.preventDefault();
+        setSpacePanActive(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [canControlStlView, isStlPanelHovered]);
+
   const actions = isCustomStl ? (
     <div className="mockup-viewer__actions" aria-label="STL 보기 조절">
       <button
@@ -424,6 +624,15 @@ export default function MockupViewer({
       >
         매핑 리셋
       </button>
+      <button
+        type="button"
+        onClick={() => setViewResetRequest((current) => current + 1)}
+        disabled={!stlUrl}
+        aria-label="STL 뷰 리셋"
+        title="카메라와 이동 상태를 초기 보기로 복구"
+      >
+        뷰 리셋
+      </button>
     </div>
   ) : null;
 
@@ -436,6 +645,15 @@ export default function MockupViewer({
       actions={actions}
     >
       <div className="preview-panel__body">
+        <div
+          className="mockup-viewer__interaction-layer"
+          onPointerEnter={() => setIsStlPanelHovered(true)}
+          onPointerLeave={() => {
+            setIsStlPanelHovered(false);
+            setSpacePanActive(false);
+          }}
+          onContextMenu={isCustomStl ? (event) => event.preventDefault() : undefined}
+        >
         {/* 접힌 동안 R3F Canvas를 unmount해 renderer를 정지/해제하고,
             다시 펼치면 새 패널 크기로 renderer가 재생성된다 */}
         {!panelCollapsed && (
@@ -456,6 +674,8 @@ export default function MockupViewer({
                   selectedMotifs={selectedMotifs}
                   params={params}
                   fitRequest={fitRequest}
+                  viewResetRequest={viewResetRequest}
+                  spacePanActive={spacePanActive}
                 />
               )}
             </>
@@ -485,6 +705,7 @@ export default function MockupViewer({
         {!panelCollapsed && isCustomStl && !stlUrl && (
           <p className="preview-panel__placeholder">STL 파일을 업로드하세요</p>
         )}
+        </div>
       </div>
     </PreviewPanel>
   );
